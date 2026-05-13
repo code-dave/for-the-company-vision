@@ -1,4 +1,4 @@
-import type { AppConfig, BoardAnalysis, HealthResponse, Snapshot, UpdateAppConfig } from "./types";
+import type { AppConfig, BoardAnalysis, HealthResponse, ProjectSearchRequest, ProjectSearchResponse, Snapshot, UpdateAppConfig } from "./types";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -34,6 +34,11 @@ export const api = {
     request<AppConfig>("/api/config", {
       method: "POST",
       body: JSON.stringify(config)
+    }),
+  searchProjects: (input: ProjectSearchRequest) =>
+    request<ProjectSearchResponse>("/api/projects/search", {
+      method: "POST",
+      body: JSON.stringify(input)
     }),
   sync: (project: string) =>
     request<Snapshot>("/api/sync", {

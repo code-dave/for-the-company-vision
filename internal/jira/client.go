@@ -36,11 +36,37 @@ type searchResponse struct {
 	Schema     map[string]fieldMeta `json:"schema"`
 }
 
+type projectSearchResponse struct {
+	Values []rawProject `json:"values"`
+}
+
 type rawIssue struct {
 	ID     string         `json:"id"`
 	Key    string         `json:"key"`
 	Self   string         `json:"self"`
 	Fields map[string]any `json:"fields"`
+}
+
+type rawProject struct {
+	ID             string            `json:"id"`
+	Key            string            `json:"key"`
+	Name           string            `json:"name"`
+	ProjectTypeKey string            `json:"projectTypeKey"`
+	Lead           map[string]any    `json:"lead"`
+	AvatarURLs     map[string]string `json:"avatarUrls"`
+}
+
+type HTTPError struct {
+	StatusCode int
+	Status     string
+	Body       string
+}
+
+func (e *HTTPError) Error() string {
+	if strings.TrimSpace(e.Body) == "" {
+		return fmt.Sprintf("jira returned %s", e.Status)
+	}
+	return fmt.Sprintf("jira returned %s: %s", e.Status, strings.TrimSpace(e.Body))
 }
 
 func NewClient(baseURL, token string) (*Client, error) {
@@ -58,6 +84,26 @@ func NewClient(baseURL, token string) (*Client, error) {
 			Timeout: 90 * time.Second,
 		},
 	}, nil
+}
+
+func (c *Client) ListProjects(ctx context.Context, query string, limit int) ([]Project, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+
+	projects, err := c.searchProjects(ctx, query, limit)
+	if err == nil {
+		return filterProjects(projects, query, limit), nil
+	}
+	if !isHTTPStatus(err, http.StatusBadRequest, http.StatusNotFound, http.StatusMethodNotAllowed) {
+		return nil, fmt.Errorf("search jira projects: %w", err)
+	}
+
+	projects, err = c.allProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list jira projects: %w", err)
+	}
+	return filterProjects(projects, query, limit), nil
 }
 
 func (c *Client) FetchProject(ctx context.Context, project string) (*Snapshot, error) {
@@ -137,6 +183,29 @@ func (c *Client) search(ctx context.Context, project string, startAt, maxResults
 	return &response, nil
 }
 
+func (c *Client) searchProjects(ctx context.Context, query string, limit int) ([]rawProject, error) {
+	params := url.Values{}
+	params.Set("maxResults", strconv.Itoa(limit))
+	if strings.TrimSpace(query) != "" {
+		params.Set("query", strings.TrimSpace(query))
+	}
+
+	var response projectSearchResponse
+	path := "/rest/api/2/project/search?" + params.Encode()
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return nil, err
+	}
+	return response.Values, nil
+}
+
+func (c *Client) allProjects(ctx context.Context) ([]rawProject, error) {
+	var projects []rawProject
+	if err := c.doJSON(ctx, http.MethodGet, "/rest/api/2/project", nil, &projects); err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
 func (c *Client) doJSON(ctx context.Context, method, path string, body any, out any) error {
 	var reader io.Reader
 	if body != nil {
@@ -173,13 +242,101 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("jira returned %s: %s", resp.Status, strings.TrimSpace(string(responseBody)))
+		return &HTTPError{
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+			Body:       strings.TrimSpace(string(responseBody)),
+		}
 	}
 
 	if out == nil {
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func isHTTPStatus(err error, statuses ...int) bool {
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	for _, status := range statuses {
+		if httpErr.StatusCode == status {
+			return true
+		}
+	}
+	return false
+}
+
+func filterProjects(rawProjects []rawProject, query string, limit int) []Project {
+	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
+	results := make([]Project, 0, len(rawProjects))
+	seen := map[string]bool{}
+	for _, rawProject := range rawProjects {
+		project := normalizeProject(rawProject)
+		if project.Key == "" || seen[project.Key] {
+			continue
+		}
+		if normalizedQuery != "" {
+			key := strings.ToLower(project.Key)
+			name := strings.ToLower(project.Name)
+			projectType := strings.ToLower(project.ProjectTypeKey)
+			if !strings.Contains(key, normalizedQuery) && !strings.Contains(name, normalizedQuery) && !strings.Contains(projectType, normalizedQuery) {
+				continue
+			}
+		}
+		seen[project.Key] = true
+		results = append(results, project)
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		leftKey := strings.ToLower(results[i].Key)
+		rightKey := strings.ToLower(results[j].Key)
+		if normalizedQuery != "" {
+			leftPrefix := strings.HasPrefix(leftKey, normalizedQuery)
+			rightPrefix := strings.HasPrefix(rightKey, normalizedQuery)
+			if leftPrefix != rightPrefix {
+				return leftPrefix
+			}
+			leftNamePrefix := strings.HasPrefix(strings.ToLower(results[i].Name), normalizedQuery)
+			rightNamePrefix := strings.HasPrefix(strings.ToLower(results[j].Name), normalizedQuery)
+			if leftNamePrefix != rightNamePrefix {
+				return leftNamePrefix
+			}
+		}
+		return leftKey < rightKey
+	})
+
+	if len(results) > limit {
+		return results[:limit]
+	}
+	return results
+}
+
+func normalizeProject(raw rawProject) Project {
+	project := Project{
+		ID:             raw.ID,
+		Key:            strings.ToUpper(strings.TrimSpace(raw.Key)),
+		Name:           strings.TrimSpace(raw.Name),
+		ProjectTypeKey: strings.TrimSpace(raw.ProjectTypeKey),
+		LeadName:       projectLeadName(raw.Lead),
+	}
+	for _, size := range []string{"48x48", "32x32", "24x24", "16x16"} {
+		if avatarURL := strings.TrimSpace(raw.AvatarURLs[size]); avatarURL != "" {
+			project.AvatarURL = avatarURL
+			break
+		}
+	}
+	return project
+}
+
+func projectLeadName(lead map[string]any) string {
+	for _, key := range []string{"displayName", "name", "key"} {
+		if value := stringValue(lead[key]); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func detectFields(fields []fieldMeta) DetectedFields {

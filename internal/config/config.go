@@ -50,7 +50,7 @@ func Load(root string) (Config, error) {
 	}
 
 	cfg := Config{
-		JiraBaseURL: normalizeBaseURL(os.Getenv("JIRA_BASE_URL")),
+		JiraBaseURL: NormalizeBaseURL(os.Getenv("JIRA_BASE_URL")),
 		JiraProject: strings.ToUpper(strings.TrimSpace(env("JIRA_PROJECT", ""))),
 		JiraToken:   strings.TrimSpace(os.Getenv("JIRA_TOKEN")),
 		Port:        port,
@@ -120,7 +120,7 @@ func SaveAppSettings(path string, settings AppSettings) error {
 	}
 
 	lines := []string{
-		"JIRA_BASE_URL=" + shellQuote(normalizeBaseURL(settings.JiraBaseURL)),
+		"JIRA_BASE_URL=" + shellQuote(NormalizeBaseURL(settings.JiraBaseURL)),
 		"JIRA_PROJECT=" + shellQuote(strings.ToUpper(strings.TrimSpace(settings.JiraProject))),
 		"CODEX_BIN=" + shellQuote(strings.TrimSpace(settings.CodexBin)),
 		"CODEX_MODEL=" + shellQuote(strings.TrimSpace(settings.CodexModel)),
@@ -217,7 +217,7 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func normalizeBaseURL(value string) string {
+func NormalizeBaseURL(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""
@@ -230,4 +230,8 @@ func normalizeBaseURL(value string) string {
 		return strings.TrimRight(value, "/")
 	}
 	return parsed.Scheme + "://" + parsed.Host
+}
+
+func normalizeBaseURL(value string) string {
+	return NormalizeBaseURL(value)
 }

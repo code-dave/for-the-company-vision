@@ -28,6 +28,25 @@ export type UpdateAppConfig = {
   cacheDir: string;
 };
 
+export type ProjectSearchRequest = {
+  query: string;
+  jiraBaseUrl?: string;
+  jiraToken?: string;
+};
+
+export type ProjectSearchResult = {
+  id?: string;
+  key: string;
+  name: string;
+  projectTypeKey?: string;
+  leadName?: string;
+  avatarUrl?: string;
+};
+
+export type ProjectSearchResponse = {
+  projects: ProjectSearchResult[];
+};
+
 export type Issue = {
   id: string;
   key: string;

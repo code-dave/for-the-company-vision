@@ -38,6 +38,16 @@ type projectRequest struct {
 	ForceSync bool   `json:"forceSync"`
 }
 
+type projectSearchRequest struct {
+	Query       string `json:"query"`
+	JiraBaseURL string `json:"jiraBaseUrl"`
+	JiraToken   string `json:"jiraToken"`
+}
+
+type projectSearchResponse struct {
+	Projects []jira.Project `json:"projects"`
+}
+
 type updateSettingsRequest struct {
 	JiraBaseURL string `json:"jiraBaseUrl"`
 	JiraProject string `json:"jiraProject"`
@@ -57,6 +67,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("POST /api/config", s.handleUpdateConfig)
+	mux.HandleFunc("POST /api/projects/search", s.handleProjectSearch)
 	mux.HandleFunc("POST /api/sync", s.handleSync)
 	mux.HandleFunc("GET /api/snapshot", s.handleGetSnapshot)
 	mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
@@ -123,7 +134,7 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nextCfg := s.cfg
-	nextCfg.JiraBaseURL = strings.TrimRight(strings.TrimSpace(settings.JiraBaseURL), "/")
+	nextCfg.JiraBaseURL = config.NormalizeBaseURL(settings.JiraBaseURL)
 	nextCfg.JiraProject = strings.ToUpper(strings.TrimSpace(settings.JiraProject))
 	nextCfg.JiraToken = token
 	nextCfg.Codex.Bin = strings.TrimSpace(settings.CodexBin)
@@ -146,6 +157,47 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	s.cache = store.New(nextCfg.CacheDir)
 
 	writeJSON(w, http.StatusOK, s.cfg.PublicSettings())
+}
+
+func (s *Server) handleProjectSearch(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	var req projectSearchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	baseURL := config.NormalizeBaseURL(req.JiraBaseURL)
+	if baseURL == "" {
+		baseURL = s.cfg.JiraBaseURL
+	}
+	token := strings.TrimSpace(req.JiraToken)
+	if token == "" {
+		token = s.cfg.JiraToken
+	}
+	if baseURL == "" || token == "" {
+		writeError(w, http.StatusBadRequest, errors.New("Jira endpoint and token are required before project search"))
+		return
+	}
+
+	jiraClient := s.jira
+	if jiraClient == nil || baseURL != s.cfg.JiraBaseURL || token != s.cfg.JiraToken {
+		var err error
+		jiraClient, err = jira.NewClient(baseURL, token)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	projects, err := jiraClient.ListProjects(ctx, req.Query, 25)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectSearchResponse{Projects: projects})
 }
 
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {

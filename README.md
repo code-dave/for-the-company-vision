@@ -24,7 +24,7 @@ On first launch, the Setup tab walks through onboarding:
 - paste any Jira URL; the app normalizes it to the site origin
 - open the generated token page link
 - paste the generated token
-- enter the Jira project key
+- search for and select the Jira project
 - verify Codex readiness
 
 The app writes those values to `.vision-cache/config.env`, which is ignored by git.

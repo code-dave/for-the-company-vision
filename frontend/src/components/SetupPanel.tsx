@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, ExternalLink, RefreshCcw, Save } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, CheckCircle2, ExternalLink, RefreshCcw, Save, Search } from "lucide-react";
 import { api } from "../api";
-import type { AppConfig, HealthResponse, UpdateAppConfig } from "../types";
+import type { AppConfig, HealthResponse, ProjectSearchResult, UpdateAppConfig } from "../types";
 
 type Props = {
   onSaved: (config: AppConfig) => void | Promise<void>;
@@ -34,6 +34,11 @@ export function SetupPanel({ onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [projectQuery, setProjectQuery] = useState("");
+  const [projectResults, setProjectResults] = useState<ProjectSearchResult[]>([]);
+  const [projectSearching, setProjectSearching] = useState(false);
+  const [projectSearchError, setProjectSearchError] = useState<string | null>(null);
+  const projectSearchId = useRef(0);
 
   useEffect(() => {
     void loadConfig();
@@ -42,6 +47,27 @@ export function SetupPanel({ onSaved }: Props) {
   const normalizedJiraUrl = useMemo(() => normalizeJiraUrl(form.jiraBaseUrl), [form.jiraBaseUrl]);
   const tokenUrl = useMemo(() => buildTokenUrl(normalizedJiraUrl), [normalizedJiraUrl]);
   const currentStepIndex = steps.findIndex((item) => item.id === step);
+  const projectSearchReady = Boolean(normalizedJiraUrl && (form.jiraToken.trim() || config?.jiraTokenSaved));
+  const selectedProject = useMemo(
+    () => projectResults.find((project) => project.key === form.jiraProject.trim().toUpperCase()),
+    [form.jiraProject, projectResults]
+  );
+
+  useEffect(() => {
+    if (step !== "project") {
+      return;
+    }
+    if (!projectSearchReady) {
+      setProjectResults([]);
+      setProjectSearchError(null);
+      return;
+    }
+
+    const handle = window.setTimeout(() => {
+      void searchProjects(projectQuery);
+    }, 350);
+    return () => window.clearTimeout(handle);
+  }, [config?.jiraTokenSaved, form.jiraToken, normalizedJiraUrl, projectQuery, projectSearchReady, step]);
 
   async function loadConfig() {
     try {
@@ -57,6 +83,7 @@ export function SetupPanel({ onSaved }: Props) {
         port: nextConfig.port || 8787,
         cacheDir: nextConfig.cacheDir || ".vision-cache"
       });
+      setProjectQuery(nextConfig.jiraProject);
       if (!nextConfig.jiraBaseUrl) {
         setStep("endpoint");
       } else if (!nextConfig.jiraTokenSaved) {
@@ -87,6 +114,7 @@ export function SetupPanel({ onSaved }: Props) {
       setConfig(saved);
       setHealth(nextHealth);
       setForm((current) => ({ ...current, jiraBaseUrl: saved.jiraBaseUrl, jiraProject: saved.jiraProject, jiraToken: "" }));
+      setProjectQuery(saved.jiraProject);
       setMessage("Settings saved. You can now sync Jira and run Codex analysis.");
       await onSaved(saved);
     } catch (err) {
@@ -116,11 +144,13 @@ export function SetupPanel({ onSaved }: Props) {
       return;
     }
     if (step === "project") {
-      if (!form.jiraProject.trim()) {
-        setError("Enter a Jira project key.");
+      const projectKey = form.jiraProject.trim().toUpperCase() || manualProjectKey(projectQuery);
+      if (!projectKey) {
+        setError("Select a Jira project or enter its key.");
         return;
       }
-      setForm({ ...form, jiraProject: form.jiraProject.trim().toUpperCase() });
+      setForm({ ...form, jiraProject: projectKey });
+      setProjectQuery(projectKey);
       setStep("codex");
       return;
     }
@@ -133,6 +163,51 @@ export function SetupPanel({ onSaved }: Props) {
     const previous = steps[Math.max(0, currentStepIndex - 1)];
     setError(null);
     setStep(previous.id);
+  }
+
+  async function searchProjects(query: string) {
+    if (!projectSearchReady) {
+      setProjectSearchError("Enter the Jira URL and token before searching projects.");
+      return;
+    }
+
+    const searchId = projectSearchId.current + 1;
+    projectSearchId.current = searchId;
+    setProjectSearching(true);
+    setProjectSearchError(null);
+    try {
+      const response = await api.searchProjects({
+        query: query.trim(),
+        jiraBaseUrl: normalizedJiraUrl,
+        jiraToken: form.jiraToken.trim() || undefined
+      });
+      if (projectSearchId.current !== searchId) {
+        return;
+      }
+      setProjectResults(response.projects);
+    } catch (err) {
+      if (projectSearchId.current !== searchId) {
+        return;
+      }
+      setProjectResults([]);
+      setProjectSearchError(errorMessage(err));
+    } finally {
+      if (projectSearchId.current === searchId) {
+        setProjectSearching(false);
+      }
+    }
+  }
+
+  function updateProjectQuery(value: string) {
+    setProjectQuery(value);
+    setProjectSearchError(null);
+    setForm({ ...form, jiraProject: manualProjectKey(value) });
+  }
+
+  function chooseProject(project: ProjectSearchResult) {
+    setProjectQuery(project.key);
+    setProjectSearchError(null);
+    setForm({ ...form, jiraProject: project.key });
   }
 
   return (
@@ -229,12 +304,51 @@ export function SetupPanel({ onSaved }: Props) {
             <div>
               <p className="eyebrow">Step 3</p>
               <h3>Choose the Jira project</h3>
-              <p className="setup-copy">Enter the project key to sync and analyze.</p>
+              <p className="setup-copy">Search projects available to this Jira token, then select the project to sync and analyze.</p>
             </div>
-            <label>
-              Project Key
-              <input value={form.jiraProject} placeholder="PROJ" onChange={(event) => setForm({ ...form, jiraProject: event.target.value.toUpperCase() })} />
-            </label>
+            <div className="project-search-row">
+              <label>
+                Project Search
+                <input value={projectQuery} placeholder="Search by key or name" onChange={(event) => updateProjectQuery(event.target.value)} />
+              </label>
+              <button type="button" className="icon-button secondary" onClick={() => void searchProjects(projectQuery)} disabled={!projectSearchReady || projectSearching}>
+                <Search size={17} aria-hidden="true" />
+                <span>{projectSearching ? "Searching" : "Search"}</span>
+              </button>
+            </div>
+            <div className="selected-project">
+              <span>Selected key</span>
+              <strong>{form.jiraProject.trim().toUpperCase() || "None selected"}</strong>
+              {selectedProject ? <p>{selectedProject.name}</p> : null}
+            </div>
+            {projectSearchError ? <div className="project-search-message">Project search failed: {projectSearchError}</div> : null}
+            <div className="project-results" role="listbox" aria-label="Jira projects">
+              {projectSearching ? <div className="project-result-empty">Searching Jira projects...</div> : null}
+              {!projectSearching && projectResults.length === 0 ? (
+                <div className="project-result-empty">
+                  {projectSearchReady ? "No matching projects yet. Type a project key manually or adjust the search." : "Complete the Jira URL and token steps first."}
+                </div>
+              ) : null}
+              {!projectSearching
+                ? projectResults.map((project) => (
+                    <button
+                      key={project.key}
+                      type="button"
+                      className={`project-result ${form.jiraProject.trim().toUpperCase() === project.key ? "selected" : ""}`}
+                      role="option"
+                      aria-selected={form.jiraProject.trim().toUpperCase() === project.key}
+                      onClick={() => chooseProject(project)}
+                    >
+                      <span className="project-avatar">{project.key.slice(0, 2)}</span>
+                      <span>
+                        <strong>{project.key}</strong>
+                        <small>{project.name}</small>
+                      </span>
+                      {project.projectTypeKey ? <em>{project.projectTypeKey}</em> : null}
+                    </button>
+                  ))
+                : null}
+            </div>
           </div>
         ) : null}
 
@@ -348,6 +462,14 @@ function buildTokenUrl(baseUrl: string): string {
     return "";
   }
   return `${baseUrl}/secure/ViewProfile.jspa?selectedTab=com.atlassian.pats.pats-plugin:jira-user-personal-access-tokens`;
+}
+
+function manualProjectKey(value: string): string {
+  const trimmed = value.trim();
+  if (!/^[a-z][a-z0-9_]*$/i.test(trimmed)) {
+    return "";
+  }
+  return trimmed.toUpperCase();
 }
 
 function errorMessage(err: unknown): string {

@@ -1,6 +1,9 @@
 package jira
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -44,5 +47,69 @@ func TestNormalizeIssueDetectsCommonFields(t *testing.T) {
 	}
 	if issue.Custom["Epic Name"] != "Vision platform" {
 		t.Fatalf("expected custom epic name to be retained, got %#v", issue.Custom)
+	}
+}
+
+func TestListProjectsUsesSearchEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rest/api/2/project/search" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("query"); got != "road" {
+			t.Fatalf("query = %q, expected %q", got, "road")
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[{"id":"1","key":"ROAD","name":"Roadmap Work","projectTypeKey":"software"},{"id":"2","key":"ABC","name":"Alpha Beta","projectTypeKey":"business"}]}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	projects, err := client.ListProjects(context.Background(), "road", 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("len(projects) = %d, expected 1", len(projects))
+	}
+	if projects[0].Key != "ROAD" || projects[0].Name != "Roadmap Work" {
+		t.Fatalf("unexpected project: %#v", projects[0])
+	}
+}
+
+func TestListProjectsFallsBackToProjectList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/api/2/project/search":
+			http.NotFound(w, r)
+		case "/rest/api/2/project":
+			_, _ = w.Write([]byte(`[{"id":"1","key":"PLAT","name":"Platform Work","projectTypeKey":"software"},{"id":"2","key":"OPS","name":"Operations","projectTypeKey":"service_desk"}]`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	projects, err := client.ListProjects(context.Background(), "platform", 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("len(projects) = %d, expected 1", len(projects))
+	}
+	if projects[0].Key != "PLAT" {
+		t.Fatalf("project key = %q, expected PLAT", projects[0].Key)
 	}
 }

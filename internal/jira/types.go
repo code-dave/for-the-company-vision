@@ -43,3 +43,12 @@ type DetectedFields struct {
 	StoryPoints string `json:"storyPoints,omitempty"`
 	Sprint      string `json:"sprint,omitempty"`
 }
+
+type Project struct {
+	ID             string `json:"id,omitempty"`
+	Key            string `json:"key"`
+	Name           string `json:"name"`
+	ProjectTypeKey string `json:"projectTypeKey,omitempty"`
+	LeadName       string `json:"leadName,omitempty"`
+	AvatarURL      string `json:"avatarUrl,omitempty"`
+}
