@@ -663,6 +663,12 @@ h3 {
   gap: 14px;
 }
 
+.board-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .vision-board-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -710,6 +716,172 @@ h3 {
   font-size: 0.82rem;
 }
 
+.portfolio-network-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dfe5eb;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfd;
+}
+
+.portfolio-network-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.portfolio-network-canvas {
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid #dfe5eb;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 50%, rgb(55 105 150 / 8%), transparent 38%),
+    linear-gradient(#ffffff, #f8fafc);
+}
+
+.portfolio-network-canvas svg {
+  display: block;
+  min-width: 860px;
+  width: 100%;
+  height: auto;
+}
+
+.network-link {
+  stroke: #9eb2c4;
+  stroke-width: 1.4;
+}
+
+.network-small-link {
+  stroke: #c7d5df;
+  stroke-width: 0.9;
+}
+
+.network-risk-link {
+  stroke: #d6a4a0;
+  stroke-width: 1.2;
+  stroke-dasharray: 5 5;
+}
+
+.network-risk-link.muted {
+  stroke-width: 0.8;
+  opacity: 0.55;
+}
+
+.network-center-node circle {
+  fill: url("#portfolioCenter");
+}
+
+.network-center-node text,
+.network-big-node text,
+.network-risk-node text {
+  text-anchor: middle;
+  fill: #ffffff;
+  font-weight: 900;
+}
+
+.network-center-node text {
+  font-size: 1rem;
+}
+
+.network-node-subtitle {
+  font-size: 0.72rem;
+  font-weight: 800;
+  opacity: 0.9;
+}
+
+.network-big-node circle {
+  fill: #ffffff;
+  stroke: var(--blue);
+  stroke-width: 2;
+}
+
+.network-big-node .network-node-index {
+  fill: var(--blue);
+  font-size: 0.72rem;
+}
+
+.network-big-title {
+  fill: var(--ink);
+  font-size: 0.82rem;
+}
+
+.network-big-node .network-node-subtitle {
+  fill: var(--muted);
+}
+
+.network-small-node circle {
+  fill: var(--green);
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+.network-risk-node circle {
+  fill: #fff7f6;
+  stroke: var(--red);
+  stroke-width: 2;
+}
+
+.network-risk-node text {
+  fill: var(--red);
+}
+
+.network-outlier-node circle {
+  fill: var(--red);
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+.network-outlier-node.medium circle {
+  fill: var(--gold);
+}
+
+.network-outlier-node.low circle {
+  fill: var(--green);
+}
+
+.network-outlier-node text {
+  text-anchor: end;
+  fill: #6d241e;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.portfolio-network-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.portfolio-network-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.portfolio-network-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.legend-big {
+  background: var(--blue);
+}
+
+.legend-small {
+  background: var(--green);
+}
+
+.legend-risk {
+  background: var(--red);
+}
+
 .vision-map-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
@@ -732,9 +904,15 @@ h3 {
   background: #ffffff;
 }
 
+.vision-lane.collapsed {
+  border-left-color: #8794a1;
+  background: #fbfcfd;
+}
+
 .lane-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
   gap: 12px;
 }
 
@@ -752,6 +930,26 @@ h3 {
 
 .lane-header h3 {
   font-size: 1rem;
+}
+
+.lane-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid #c8d0da;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #24313d;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.lane-toggle:hover {
+  border-color: var(--blue);
 }
 
 .lane-header p,
@@ -1472,6 +1670,11 @@ td:nth-child(2) {
     width: 100%;
   }
 
+  .board-actions,
+  .board-actions .icon-button {
+    width: 100%;
+  }
+
   .metric-tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1538,6 +1741,10 @@ td:nth-child(2) {
 
   .lane-header {
     grid-template-columns: 1fr;
+  }
+
+  .lane-toggle {
+    width: 100%;
   }
 
   .readiness-grid {
