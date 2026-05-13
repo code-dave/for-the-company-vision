@@ -11,14 +11,25 @@ type Props = {
 export function VisionBoard({ analysis }: Props) {
   const smallRockCount = analysis.bigRocks.reduce((total, rock) => total + rock.smallRocks.length, 0);
   const linkedIssueCount = new Set(analysis.bigRocks.flatMap((rock) => [...rock.issueKeys, ...rock.smallRocks.flatMap((small) => small.issueKeys)])).size;
-  const topOutliers = [...analysis.outliers].sort((a, b) => severityRank(b.severity) - severityRank(a.severity)).slice(0, 8);
   const rockIds = useMemo(() => analysis.bigRocks.map((rock) => rock.id), [analysis.bigRocks]);
   const rockSignature = rockIds.join("|");
   const [expandedRockIds, setExpandedRockIds] = useState<Set<string>>(() => new Set(rockIds));
-  const allExpanded = expandedRockIds.size === rockIds.length && rockIds.length > 0;
+  const [selectedRockId, setSelectedRockId] = useState("all");
+  const [networkExpanded, setNetworkExpanded] = useState(true);
+  const [showSmallRocks, setShowSmallRocks] = useState(true);
+  const [showOutliers, setShowOutliers] = useState(true);
+  const focusedRock = selectedRockId === "all" ? null : analysis.bigRocks.find((rock) => rock.id === selectedRockId) ?? null;
+  const focusedOutliers = useMemo(() => outliersForFocus(analysis.outliers, focusedRock), [analysis.outliers, focusedRock]);
+  const topOutliers = [...focusedOutliers].sort((a, b) => severityRank(b.severity) - severityRank(a.severity)).slice(0, 8);
+  const visibleRockEntries = analysis.bigRocks
+    .map((rock, index) => ({ rock, index }))
+    .filter((entry) => !focusedRock || entry.rock.id === focusedRock.id);
+  const visibleRockIds = visibleRockEntries.map((entry) => entry.rock.id);
+  const allExpanded = visibleRockIds.length > 0 && visibleRockIds.every((id) => expandedRockIds.has(id));
 
   useEffect(() => {
     setExpandedRockIds(new Set(rockIds));
+    setSelectedRockId((current) => (current === "all" || rockIds.includes(current) ? current : "all"));
   }, [rockSignature]);
 
   function toggleRock(id: string) {
@@ -34,7 +45,17 @@ export function VisionBoard({ analysis }: Props) {
   }
 
   function setAllExpanded(expanded: boolean) {
-    setExpandedRockIds(expanded ? new Set(rockIds) : new Set());
+    setExpandedRockIds((current) => {
+      const next = new Set(current);
+      visibleRockIds.forEach((id) => {
+        if (expanded) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
   }
 
   return (
@@ -45,7 +66,18 @@ export function VisionBoard({ analysis }: Props) {
           <h2>Strategic map</h2>
         </div>
         <div className="board-actions">
-          <button type="button" className="icon-button secondary" onClick={() => setAllExpanded(!allExpanded)} disabled={rockIds.length === 0}>
+          <label className="board-filter">
+            Focus
+            <select value={selectedRockId} onChange={(event) => setSelectedRockId(event.target.value)}>
+              <option value="all">All big rocks</option>
+              {analysis.bigRocks.map((rock, index) => (
+                <option key={rock.id} value={rock.id}>
+                  BR-{String(index + 1).padStart(2, "0")} {rock.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="icon-button secondary" onClick={() => setAllExpanded(!allExpanded)} disabled={visibleRockIds.length === 0}>
             {allExpanded ? <ChevronRight size={17} aria-hidden="true" /> : <ChevronDown size={17} aria-hidden="true" />}
             <span>{allExpanded ? "Collapse All" : "Expand All"}</span>
           </button>
@@ -59,12 +91,22 @@ export function VisionBoard({ analysis }: Props) {
         <SummaryTile icon={<AlertTriangle size={18} />} label="Outliers" value={analysis.outliers.length} tone="risk" />
       </div>
 
-      <PortfolioNetwork bigRocks={analysis.bigRocks} outliers={topOutliers} />
+      <PortfolioNetwork
+        bigRocks={analysis.bigRocks}
+        outliers={topOutliers}
+        selectedRockId={selectedRockId}
+        expanded={networkExpanded}
+        showSmallRocks={showSmallRocks}
+        showOutliers={showOutliers}
+        onExpandedChange={setNetworkExpanded}
+        onShowSmallRocksChange={setShowSmallRocks}
+        onShowOutliersChange={setShowOutliers}
+      />
 
       <div className="vision-map-layout">
         <div className="vision-lanes" aria-label="Strategic big rock lanes">
           {analysis.bigRocks.length === 0 ? <p className="muted">No strategic clusters were generated for this analysis.</p> : null}
-          {analysis.bigRocks.map((rock, index) => (
+          {visibleRockEntries.map(({ rock, index }) => (
             <BigRockLane key={rock.id} rock={rock} index={index} expanded={expandedRockIds.has(rock.id)} onToggle={() => toggleRock(rock.id)} />
           ))}
         </div>
@@ -89,19 +131,41 @@ export function VisionBoard({ analysis }: Props) {
   );
 }
 
-function PortfolioNetwork({ bigRocks, outliers }: { bigRocks: BigRock[]; outliers: Outlier[] }) {
-  const center = { x: 500, y: 215 };
-  const riskHub = { x: 845, y: 215 };
+function PortfolioNetwork({
+  bigRocks,
+  outliers,
+  selectedRockId,
+  expanded,
+  showSmallRocks,
+  showOutliers,
+  onExpandedChange,
+  onShowSmallRocksChange,
+  onShowOutliersChange
+}: {
+  bigRocks: BigRock[];
+  outliers: Outlier[];
+  selectedRockId: string;
+  expanded: boolean;
+  showSmallRocks: boolean;
+  showOutliers: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  onShowSmallRocksChange: (show: boolean) => void;
+  onShowOutliersChange: (show: boolean) => void;
+}) {
+  const center = { x: 560, y: 230 };
+  const riskHub = { x: 1015, y: 230 };
   const maxIssues = Math.max(1, ...bigRocks.map((rock) => rock.issueKeys.length));
   const nodes = bigRocks.map((rock, index) => {
     const angle = -Math.PI / 2 + (index * Math.PI * 2) / Math.max(1, bigRocks.length);
     const radius = 42 + Math.round((rock.issueKeys.length / maxIssues) * 18);
+    const selected = selectedRockId === "all" || selectedRockId === rock.id;
     return {
       rock,
       index,
       radius,
-      x: center.x + Math.cos(angle) * 305,
-      y: center.y + Math.sin(angle) * 145
+      selected,
+      x: center.x + Math.cos(angle) * 345,
+      y: center.y + Math.sin(angle) * 168
     };
   });
 
@@ -112,9 +176,24 @@ function PortfolioNetwork({ bigRocks, outliers }: { bigRocks: BigRock[]; outlier
           <p className="eyebrow">Executive network</p>
           <h3>How the strategy clusters hang together</h3>
         </div>
+        <div className="network-controls">
+          <label>
+            <input type="checkbox" checked={showSmallRocks} onChange={(event) => onShowSmallRocksChange(event.target.checked)} />
+            Small rocks
+          </label>
+          <label>
+            <input type="checkbox" checked={showOutliers} onChange={(event) => onShowOutliersChange(event.target.checked)} />
+            Outliers
+          </label>
+          <button type="button" className="icon-button secondary" onClick={() => onExpandedChange(!expanded)}>
+            {expanded ? <ChevronRight size={17} aria-hidden="true" /> : <ChevronDown size={17} aria-hidden="true" />}
+            <span>{expanded ? "Hide Map" : "Show Map"}</span>
+          </button>
+        </div>
       </div>
+      {expanded ? (
       <div className="portfolio-network-canvas">
-        <svg viewBox="0 0 1000 430" role="img" aria-label="Network map of portfolio vision, big rocks, small rocks, and alignment outliers">
+        <svg viewBox="0 0 1180 460" role="img" aria-label="Network map of portfolio vision, big rocks, small rocks, and alignment outliers">
           <defs>
             <radialGradient id="portfolioCenter" cx="50%" cy="45%" r="70%">
               <stop offset="0%" stopColor="#4b7ba5" />
@@ -124,18 +203,28 @@ function PortfolioNetwork({ bigRocks, outliers }: { bigRocks: BigRock[]; outlier
               <feDropShadow dx="0" dy="4" stdDeviation="5" floodColor="#20262d" floodOpacity="0.16" />
             </filter>
           </defs>
+          <text className="network-area-label" x="80" y="36">
+            Strategic clusters
+          </text>
+          {showOutliers ? (
+            <text className="network-area-label risk" x="970" y="36">
+              Alignment risk
+            </text>
+          ) : null}
 
           {nodes.map((node) => (
-            <g key={`${node.rock.id}-edge`}>
+            <g key={`${node.rock.id}-edge`} className={node.selected ? undefined : "network-dimmed"}>
               <line className="network-link" x1={center.x} y1={center.y} x2={node.x} y2={node.y} />
-              {node.rock.smallRocks.slice(0, 10).map((small, smallIndex) => {
-                const point = smallRockPoint(node.x, node.y, node.radius, smallIndex, Math.min(10, node.rock.smallRocks.length));
-                return <line key={`${small.id}-link`} className="network-small-link" x1={node.x} y1={node.y} x2={point.x} y2={point.y} />;
-              })}
+              {showSmallRocks
+                ? node.rock.smallRocks.slice(0, 10).map((small, smallIndex) => {
+                    const point = smallRockPoint(node.x, node.y, node.radius, smallIndex, Math.min(10, node.rock.smallRocks.length));
+                    return <line key={`${small.id}-link`} className="network-small-link" x1={node.x} y1={node.y} x2={point.x} y2={point.y} />;
+                  })
+                : null}
             </g>
           ))}
 
-          <line className="network-risk-link" x1={center.x + 60} y1={center.y} x2={riskHub.x - 48} y2={riskHub.y} />
+          {showOutliers ? <line className="network-risk-link" x1={center.x + 70} y1={center.y} x2={riskHub.x - 55} y2={riskHub.y} /> : null}
 
           <g className="network-center-node" filter="url(#nodeShadow)">
             <circle cx={center.x} cy={center.y} r="64" />
@@ -151,16 +240,18 @@ function PortfolioNetwork({ bigRocks, outliers }: { bigRocks: BigRock[]; outlier
           </g>
 
           {nodes.map((node) => (
-            <g key={node.rock.id}>
-              {node.rock.smallRocks.slice(0, 10).map((small, smallIndex) => {
-                const point = smallRockPoint(node.x, node.y, node.radius, smallIndex, Math.min(10, node.rock.smallRocks.length));
-                return (
-                  <g key={small.id} className="network-small-node">
-                    <title>{small.title}</title>
-                    <circle cx={point.x} cy={point.y} r="7" />
-                  </g>
-                );
-              })}
+            <g key={node.rock.id} className={node.selected ? undefined : "network-dimmed"}>
+              {showSmallRocks
+                ? node.rock.smallRocks.slice(0, 10).map((small, smallIndex) => {
+                    const point = smallRockPoint(node.x, node.y, node.radius, smallIndex, Math.min(10, node.rock.smallRocks.length));
+                    return (
+                      <g key={small.id} className="network-small-node">
+                        <title>{small.title}</title>
+                        <circle cx={point.x} cy={point.y} r="7" />
+                      </g>
+                    );
+                  })
+                : null}
               <g className="network-big-node" filter="url(#nodeShadow)">
                 <title>{node.rock.title}</title>
                 <circle cx={node.x} cy={node.y} r={node.radius} />
@@ -181,6 +272,7 @@ function PortfolioNetwork({ bigRocks, outliers }: { bigRocks: BigRock[]; outlier
             </g>
           ))}
 
+          {showOutliers ? (
           <g className="network-risk-node" filter="url(#nodeShadow)">
             <circle cx={riskHub.x} cy={riskHub.y} r="46" />
             <text x={riskHub.x} y={riskHub.y - 5}>
@@ -190,22 +282,31 @@ function PortfolioNetwork({ bigRocks, outliers }: { bigRocks: BigRock[]; outlier
               {outliers.length} outliers
             </text>
           </g>
+          ) : null}
 
-          {outliers.slice(0, 6).map((outlier, index) => {
-            const y = 82 + index * 46;
-            return (
-              <g key={outlier.issueKey} className={`network-outlier-node ${outlier.severity}`}>
-                <title>{outlier.title}</title>
-                <line className="network-risk-link muted" x1={riskHub.x + 40} y1={riskHub.y} x2="948" y2={y} />
-                <circle cx="948" cy={y} r="10" />
-                <text x="930" y={y + 4}>
-                  {outlier.issueKey}
-                </text>
-              </g>
-            );
-          })}
+          {showOutliers
+            ? outliers.slice(0, 6).map((outlier, index) => {
+                const y = 96 + index * 44;
+                return (
+                  <g key={outlier.issueKey} className={`network-outlier-node ${outlier.severity}`}>
+                    <title>{outlier.title}</title>
+                    <line className="network-risk-link muted" x1={riskHub.x + 42} y1={riskHub.y} x2="1115" y2={y} />
+                    <circle cx="1115" cy={y} r="10" />
+                    <text x="1097" y={y + 4}>
+                      {outlier.issueKey}
+                    </text>
+                  </g>
+                );
+              })
+            : null}
         </svg>
       </div>
+      ) : (
+        <div className="portfolio-network-collapsed">
+          <strong>Network map hidden</strong>
+          <span>Use Show Map to reopen the executive relationship view. The focus filter still applies to the big-rock lanes below.</span>
+        </div>
+      )}
       <div className="portfolio-network-legend" aria-label="Network legend">
         <span>
           <i className="legend-big" /> Big rocks sized by Jira issue count
@@ -330,6 +431,19 @@ function severityRank(severity: Outlier["severity"]) {
   return 1;
 }
 
+function outliersForFocus(outliers: Outlier[], rock: BigRock | null) {
+  if (!rock) {
+    return outliers;
+  }
+  const title = rock.title.toLowerCase();
+  const issueKeys = new Set([...rock.issueKeys, ...rock.smallRocks.flatMap((small) => small.issueKeys)]);
+  const matched = outliers.filter((outlier) => {
+    const recommendedFit = outlier.recommendedFit?.toLowerCase() ?? "";
+    return issueKeys.has(outlier.issueKey) || (recommendedFit !== "" && (recommendedFit.includes(title) || title.includes(recommendedFit)));
+  });
+  return matched.length > 0 ? matched : outliers;
+}
+
 function confidencePercent(value: number) {
   return Math.max(0, Math.min(100, Math.round(value * 100)));
 }
@@ -338,8 +452,8 @@ function smallRockPoint(x: number, y: number, radius: number, index: number, cou
   const angle = -Math.PI / 2 + (index * Math.PI * 2) / Math.max(1, count);
   const distance = radius + 26;
   return {
-    x: clamp(x + Math.cos(angle) * distance, 28, 972),
-    y: clamp(y + Math.sin(angle) * distance, 28, 402)
+    x: clamp(x + Math.cos(angle) * distance, 32, 950),
+    y: clamp(y + Math.sin(angle) * distance, 34, 426)
   };
 }
 

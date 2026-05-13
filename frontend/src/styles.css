@@ -665,8 +665,29 @@ h3 {
 
 .board-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: end;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.board-filter {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.board-filter select {
+  min-width: 260px;
+  height: 38px;
+  border: 1px solid #c8d0da;
+  border-radius: 6px;
+  padding: 0 34px 0 10px;
+  color: var(--ink);
+  background: #ffffff;
 }
 
 .vision-board-summary {
@@ -732,6 +753,34 @@ h3 {
   gap: 12px;
 }
 
+.network-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.network-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid #d7dee7;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #435160;
+  background: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.network-controls input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--blue);
+}
+
 .portfolio-network-canvas {
   min-width: 0;
   overflow: auto;
@@ -744,9 +793,38 @@ h3 {
 
 .portfolio-network-canvas svg {
   display: block;
-  min-width: 860px;
+  min-width: 920px;
   width: 100%;
   height: auto;
+}
+
+.portfolio-network-collapsed {
+  display: grid;
+  gap: 4px;
+  border: 1px dashed #c8d0da;
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--muted);
+  background: #ffffff;
+}
+
+.portfolio-network-collapsed strong {
+  color: var(--ink);
+}
+
+.network-area-label {
+  fill: #637385;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.network-area-label.risk {
+  fill: #8a332c;
+}
+
+.network-dimmed {
+  opacity: 0.22;
 }
 
 .network-link {
@@ -1671,8 +1749,24 @@ td:nth-child(2) {
   }
 
   .board-actions,
-  .board-actions .icon-button {
+  .board-actions .icon-button,
+  .board-filter,
+  .board-filter select {
     width: 100%;
+  }
+
+  .portfolio-network-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .network-controls,
+  .network-controls .icon-button {
+    width: 100%;
+  }
+
+  .network-controls label {
+    flex: 1 1 160px;
   }
 
   .metric-tiles {
