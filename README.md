@@ -16,15 +16,17 @@ The app does not commit Jira credentials. Put local values in `.env.local`; that
 ## Local Setup
 
 ```bash
-cp .env.example .env.local
-# edit .env.local and set JIRA_BASE_URL, JIRA_PROJECT, and JIRA_TOKEN
 ./start.sh
 ```
+
+On first launch, open the Setup tab and save your Jira endpoint, project, API token, and Codex settings. The app writes those values to `.vision-cache/config.env`, which is ignored by git.
 
 Local addresses:
 
 - Backend: `http://127.0.0.1:8787`
 - Frontend: `http://127.0.0.1:5173`
+
+If either port is already in use, `start.sh` automatically chooses the next available port and prints it.
 
 ## Commands
 
