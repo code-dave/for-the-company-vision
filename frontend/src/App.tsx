@@ -85,6 +85,7 @@ export function App() {
   }
 
   const busy = loadState !== "idle";
+  const needsSetup = Boolean(health && (!health.jiraConfigured || !health.defaultProject));
   const statusLine = useMemo(() => {
     if (!health) {
       return "Checking runtime";
@@ -234,11 +235,11 @@ export function App() {
             </div>
           </section>
         </>
-      ) : (
+      ) : needsSetup ? null : (
         <section className="empty-state">
           <BrainCircuit size={42} aria-hidden="true" />
           <h2>No vision board yet</h2>
-          <p>Sync Jira for {project}, then run Codex analysis to generate the big rocks, small rocks, and outlier view.</p>
+          <p>Sync Jira{project ? ` for ${project}` : ""}, then run Codex analysis to generate the big rocks, small rocks, and outlier view.</p>
           <div className="empty-actions">
             <button type="button" className="icon-button secondary" onClick={() => void syncJira()} disabled={busy}>
               <RefreshCcw size={17} aria-hidden="true" />

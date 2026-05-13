@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -221,5 +222,12 @@ func normalizeBaseURL(value string) string {
 	if value == "" {
 		return ""
 	}
-	return strings.TrimRight(value, "/")
+	if !strings.Contains(value, "://") {
+		value = "https://" + value
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" {
+		return strings.TrimRight(value, "/")
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }

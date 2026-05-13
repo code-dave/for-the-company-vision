@@ -19,7 +19,15 @@ The app does not commit Jira credentials. Put local values in `.env.local`; that
 ./start.sh
 ```
 
-On first launch, open the Setup tab and save your Jira endpoint, project, API token, and Codex settings. The app writes those values to `.vision-cache/config.env`, which is ignored by git.
+On first launch, the Setup tab walks through onboarding:
+
+- paste any Jira URL; the app normalizes it to the site origin
+- open the generated token page link
+- paste the generated token
+- enter the Jira project key
+- verify Codex readiness
+
+The app writes those values to `.vision-cache/config.env`, which is ignored by git.
 
 Local addresses:
 
