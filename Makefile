@@ -1,10 +1,16 @@
-.PHONY: dev build test sync analyze health
+.PHONY: dev build package-web package-desktop test sync analyze health
 
 dev:
 	./start.sh
 
 build:
 	./scripts/build.sh
+
+package-web:
+	./scripts/package-web.sh
+
+package-desktop:
+	./scripts/package-desktop.sh
 
 test:
 	go test ./...
@@ -18,4 +24,3 @@ analyze:
 
 health:
 	go run ./cmd/vision health
-

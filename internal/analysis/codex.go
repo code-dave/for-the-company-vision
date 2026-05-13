@@ -153,7 +153,7 @@ func (a *CodexAnalyzer) Analyze(ctx context.Context, snapshot *jira.Snapshot) (*
 }
 
 func buildPrompt(project string, snapshot []byte) string {
-	return fmt.Sprintf(`You are the analysis engine for Company Vision Studio.
+	return fmt.Sprintf(`You are the analysis engine for The Company Vision.
 
 Mission:
 - Analyze this Jira project snapshot for project %s.

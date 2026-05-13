@@ -38,6 +38,16 @@ type projectRequest struct {
 	ForceSync bool   `json:"forceSync"`
 }
 
+type updateSettingsRequest struct {
+	JiraBaseURL string `json:"jiraBaseUrl"`
+	JiraProject string `json:"jiraProject"`
+	JiraToken   string `json:"jiraToken"`
+	CodexBin    string `json:"codexBin"`
+	CodexModel  string `json:"codexModel"`
+	Port        int    `json:"port"`
+	CacheDir    string `json:"cacheDir"`
+}
+
 func NewServer(cfg config.Config, jiraClient *jira.Client, analyzer analysis.Analyzer, cache *store.Cache) *Server {
 	return &Server{cfg: cfg, jira: jiraClient, analyzer: analyzer, cache: cache}
 }
@@ -46,6 +56,7 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
+	mux.HandleFunc("POST /api/config", s.handleUpdateConfig)
 	mux.HandleFunc("POST /api/sync", s.handleSync)
 	mux.HandleFunc("GET /api/snapshot", s.handleGetSnapshot)
 	mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
@@ -72,12 +83,69 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"jiraBaseUrl":    s.cfg.JiraBaseURL,
-		"defaultProject": s.cfg.JiraProject,
-		"codexBin":       s.cfg.Codex.Bin,
-		"codexModel":     s.cfg.Codex.Model,
-	})
+	writeJSON(w, http.StatusOK, s.cfg.PublicSettings())
+}
+
+func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	var req updateSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	configPath := filepath.Join(s.cfg.CacheDir, "config.env")
+	currentValues, _ := config.ReadEnvFile(configPath)
+	token := strings.TrimSpace(req.JiraToken)
+	if token == "" {
+		token = currentValues["JIRA_TOKEN"]
+		if token == "" {
+			token = s.cfg.JiraToken
+		}
+	}
+
+	settings := config.AppSettings{
+		JiraBaseURL: req.JiraBaseURL,
+		JiraProject: req.JiraProject,
+		JiraToken:   token,
+		CodexBin:    req.CodexBin,
+		CodexModel:  req.CodexModel,
+		Port:        req.Port,
+		CacheDir:    req.CacheDir,
+	}
+	if settings.CacheDir == "" {
+		settings.CacheDir = s.cfg.CacheDir
+	}
+
+	if err := config.SaveAppSettings(configPath, settings); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	nextCfg := s.cfg
+	nextCfg.JiraBaseURL = strings.TrimRight(strings.TrimSpace(settings.JiraBaseURL), "/")
+	nextCfg.JiraProject = strings.ToUpper(strings.TrimSpace(settings.JiraProject))
+	nextCfg.JiraToken = token
+	nextCfg.Codex.Bin = strings.TrimSpace(settings.CodexBin)
+	if nextCfg.Codex.Bin == "" {
+		nextCfg.Codex.Bin = "codex"
+	}
+	nextCfg.Codex.Model = strings.TrimSpace(settings.CodexModel)
+	if settings.Port != 0 {
+		nextCfg.Port = settings.Port
+	}
+	if settings.CacheDir != "" {
+		nextCfg.CacheDir = settings.CacheDir
+	}
+
+	s.cfg = nextCfg
+	if jiraClient, err := jira.NewClient(nextCfg.JiraBaseURL, nextCfg.JiraToken); err == nil {
+		s.jira = jiraClient
+	}
+	s.analyzer = analysis.NewCodexAnalyzer(nextCfg.Codex)
+	s.cache = store.New(nextCfg.CacheDir)
+
+	writeJSON(w, http.StatusOK, s.cfg.PublicSettings())
 }
 
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +162,10 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.JiraTimeout)
 	defer cancel()
+	if s.jira == nil {
+		writeError(w, http.StatusBadRequest, errors.New("Jira is not configured; save endpoint and token in setup"))
+		return
+	}
 	snapshot, err := s.jira.FetchProject(ctx, project)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
@@ -132,6 +204,10 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	if req.ForceSync {
 		ctx, cancel := context.WithTimeout(r.Context(), s.cfg.JiraTimeout)
 		defer cancel()
+		if s.jira == nil {
+			writeError(w, http.StatusBadRequest, errors.New("Jira is not configured; save endpoint and token in setup"))
+			return
+		}
 		snapshot, err = s.jira.FetchProject(ctx, project)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)

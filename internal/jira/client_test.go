@@ -14,7 +14,7 @@ func TestNormalizeIssueDetectsCommonFields(t *testing.T) {
 		"assignee":          map[string]any{"displayName": "Ada Lovelace"},
 		"labels":            []any{"vision", "jira"},
 		"components":        []any{map[string]any{"name": "Reporting"}},
-		"customfield_10001": "OHAIFSRE-1",
+		"customfield_10001": "DEMO-1",
 		"customfield_10002": float64(5),
 		"customfield_10003": "Vision platform",
 	}
@@ -26,14 +26,14 @@ func TestNormalizeIssueDetectsCommonFields(t *testing.T) {
 
 	issue := normalizeIssue("https://jira.example.com", rawIssue{
 		ID:     "10000",
-		Key:    "OHAIFSRE-2",
+		Key:    "DEMO-2",
 		Fields: fields,
 	}, fieldNames, detectFieldsFromNames(fieldNames))
 
-	if issue.Key != "OHAIFSRE-2" {
-		t.Fatalf("expected key OHAIFSRE-2, got %q", issue.Key)
+	if issue.Key != "DEMO-2" {
+		t.Fatalf("expected key DEMO-2, got %q", issue.Key)
 	}
-	if issue.EpicKey != "OHAIFSRE-1" {
+	if issue.EpicKey != "DEMO-1" {
 		t.Fatalf("expected epic link, got %q", issue.EpicKey)
 	}
 	if issue.StoryPoints != 5 {

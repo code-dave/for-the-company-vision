@@ -1,6 +1,6 @@
-# Company Vision Studio
+# The Company Vision
 
-Company Vision Studio pulls Jira project data, normalizes it, and asks the local Codex installation to synthesize a portfolio view: big rocks, small rocks, outliers, risks, and next moves. The app keeps the Jira/API logic in Go and keeps visualization/reporting in a React/TypeScript frontend.
+The Company Vision pulls Jira project data, normalizes it, and asks the local Codex installation to synthesize a portfolio view: big rocks, small rocks, outliers, risks, and next moves. The app keeps the Jira/API logic in Go and keeps visualization/reporting in a React/TypeScript frontend.
 
 ## Architecture
 
@@ -11,20 +11,18 @@ Company Vision Studio pulls Jira project data, normalizes it, and asks the local
 - `frontend`: Vite + React + TypeScript visualization UI.
 - `schemas/vision-analysis.schema.json`: Contract Codex must return for the board.
 
-The app does not commit Jira credentials. Put local values in `.env.local`; that file is ignored by git.
+The app does not commit Jira credentials. Put local values in `.env.local`; that file is ignored by git. First-time users can also save settings from the app's Setup tab.
 
 ## Local Setup
 
 ```bash
 cp .env.example .env.local
-# edit .env.local and set JIRA_TOKEN
+# edit .env.local and set JIRA_BASE_URL, JIRA_PROJECT, and JIRA_TOKEN
 ./start.sh
 ```
 
-Defaults:
+Local addresses:
 
-- Jira endpoint: `https://jira.oci.oraclecorp.com/`
-- Jira project: `OHAIFSRE`
 - Backend: `http://127.0.0.1:8787`
 - Frontend: `http://127.0.0.1:5173`
 
@@ -40,11 +38,11 @@ make build        # production frontend build and Go binary
 
 If npm fails with a corporate CA error, run the install step with a trusted internal CA configured. For this local machine, `NPM_CONFIG_STRICT_SSL=false npm --prefix frontend install` was required because Node could not verify the registry certificate chain.
 
-Network notes for Oracle environments:
+Network notes:
 
-- Connect to VPN before `make sync` or `make analyze`; `jira.oci.oraclecorp.com` is only resolvable on VPN.
-- Disconnect from VPN before installing new npm packages if the public npm registry is blocked or certificate interception breaks package install.
+- Connect to the network that can resolve your Jira endpoint before `make sync` or `make analyze`.
+- If your VPN blocks public package registries or breaks certificate validation, disconnect before installing new npm packages.
 
 ## Desktop Packaging Path
 
-The current app is split cleanly for Wails packaging: Go owns the app/service layer and React owns the UI. Run `scripts/install-desktop-tooling.sh` to install Wails. The next packaging step is to add a Wails desktop entrypoint that reuses the same Go services and frontend bundle for DMG/EXE output.
+See [docs/PACKAGING.md](docs/PACKAGING.md). The current app can be packaged as a local web app immediately with `make package-web`. The native DMG/EXE path is Wails; the next implementation step is adding a Wails desktop entrypoint over the existing Go services and React UI.

@@ -1,4 +1,4 @@
-import type { BoardAnalysis, HealthResponse, Snapshot } from "./types";
+import type { AppConfig, BoardAnalysis, HealthResponse, Snapshot, UpdateAppConfig } from "./types";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -29,6 +29,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<HealthResponse>("/api/health"),
+  config: () => request<AppConfig>("/api/config"),
+  saveConfig: (config: UpdateAppConfig) =>
+    request<AppConfig>("/api/config", {
+      method: "POST",
+      body: JSON.stringify(config)
+    }),
   sync: (project: string) =>
     request<Snapshot>("/api/sync", {
       method: "POST",
@@ -44,4 +50,3 @@ export const api = {
   analysis: (project: string) =>
     request<BoardAnalysis>(`/api/analysis?project=${encodeURIComponent(project)}`)
 };
-

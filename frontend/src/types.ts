@@ -7,6 +7,27 @@ export type HealthResponse = {
   port: number;
 };
 
+export type AppConfig = {
+  jiraBaseUrl: string;
+  jiraProject: string;
+  jiraTokenSaved: boolean;
+  codexBin: string;
+  codexModel: string;
+  port: number;
+  cacheDir: string;
+  configPath: string;
+};
+
+export type UpdateAppConfig = {
+  jiraBaseUrl: string;
+  jiraProject: string;
+  jiraToken?: string;
+  codexBin: string;
+  codexModel: string;
+  port: number;
+  cacheDir: string;
+};
+
 export type Issue = {
   id: string;
   key: string;

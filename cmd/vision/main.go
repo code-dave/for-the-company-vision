@@ -210,9 +210,13 @@ func runHealth(args []string) error {
 }
 
 func buildServer(cfg config.Config) (*httpapi.Server, error) {
-	jiraClient, err := jira.NewClient(cfg.JiraBaseURL, cfg.JiraToken)
-	if err != nil {
-		return nil, err
+	var jiraClient *jira.Client
+	if cfg.JiraBaseURL != "" && cfg.JiraToken != "" {
+		var err error
+		jiraClient, err = jira.NewClient(cfg.JiraBaseURL, cfg.JiraToken)
+		if err != nil {
+			return nil, err
+		}
 	}
 	analyzer := analysis.NewCodexAnalyzer(cfg.Codex)
 	cache := store.New(cfg.CacheDir)

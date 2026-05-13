@@ -10,11 +10,11 @@ import (
 func TestCompactSnapshotDropsRawCustomNoiseAndTrimsText(t *testing.T) {
 	longDescription := strings.Repeat("detail ", 400)
 	snapshot := &jira.Snapshot{
-		Project:    "OHAIFSRE",
+		Project:    "DEMO",
 		IssueCount: 1,
 		Issues: []jira.Issue{
 			{
-				Key:         "OHAIFSRE-1",
+				Key:         "DEMO-1",
 				Summary:     strings.Repeat("summary ", 80),
 				Description: longDescription,
 				IssueType:   "Story",

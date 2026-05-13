@@ -6,19 +6,22 @@ import { VisionBoard } from "./components/VisionBoard";
 import { OutlierList } from "./components/OutlierList";
 import { BigRockList } from "./components/BigRockList";
 import { IssueTable } from "./components/IssueTable";
+import { SetupPanel } from "./components/SetupPanel";
 import { SignalList } from "./components/SignalList";
 import { formatDate } from "./lib/format";
-import type { BoardAnalysis, HealthResponse, Snapshot } from "./types";
+import type { AppConfig, BoardAnalysis, HealthResponse, Snapshot } from "./types";
 
 type LoadState = "idle" | "syncing" | "analyzing" | "loading";
+type TabId = "overview" | "board" | "clusters" | "alignment" | "source" | "setup";
 
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [project, setProject] = useState("OHAIFSRE");
+  const [project, setProject] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [analysis, setAnalysis] = useState<BoardAnalysis | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
 
   useEffect(() => {
     void bootstrap();
@@ -30,8 +33,10 @@ export function App() {
     try {
       const nextHealth = await api.health();
       setHealth(nextHealth);
-      setProject(nextHealth.defaultProject || "OHAIFSRE");
-      await loadCached(nextHealth.defaultProject || "OHAIFSRE", false);
+      setProject(nextHealth.defaultProject || "");
+      if (nextHealth.defaultProject) {
+        await loadCached(nextHealth.defaultProject, false);
+      }
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -93,13 +98,31 @@ export function App() {
     return "Jira and Codex ready";
   }, [health]);
 
+  const tabs = useMemo(
+    () =>
+      [
+        { id: "overview", label: "Overview", enabled: Boolean(analysis) },
+        { id: "board", label: "Vision Board", enabled: Boolean(analysis) },
+        { id: "clusters", label: "Strategic Clusters", enabled: Boolean(analysis) },
+        { id: "alignment", label: "Alignment Review", enabled: Boolean(analysis) },
+        { id: "source", label: "Jira Source", enabled: Boolean(snapshot) },
+        { id: "setup", label: "Setup", enabled: true }
+      ] satisfies Array<{ id: TabId; label: string; enabled: boolean }>,
+    [analysis, snapshot]
+  );
+
+  async function handleConfigSaved(config: AppConfig) {
+    setProject(config.jiraProject || project);
+    await bootstrap();
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
           <GitBranch size={22} aria-hidden="true" />
           <div>
-            <h1>Company Vision Studio</h1>
+            <h1>The Company Vision</h1>
             <p>{statusLine}</p>
           </div>
         </div>
@@ -174,16 +197,41 @@ export function App() {
             </div>
           </section>
 
-          <section className="dashboard-grid">
-            <MetricsPanel analysis={analysis} />
-            <SignalList signals={analysis.signals} />
-          </section>
+          <section className="tab-workspace">
+            <div className="tab-list" role="tablist" aria-label="Vision board views">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  aria-controls={`panel-${tab.id}`}
+                  disabled={!tab.enabled}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-          <VisionBoard analysis={analysis} />
+            <div className="tab-panel" id={`panel-${activeTab}`} role="tabpanel">
+              {activeTab === "overview" ? (
+                <section className="dashboard-grid">
+                  <MetricsPanel analysis={analysis} />
+                  <SignalList signals={analysis.signals} />
+                </section>
+              ) : null}
 
-          <section className="dashboard-grid split-wide">
-            <BigRockList bigRocks={analysis.bigRocks} />
-            <OutlierList outliers={analysis.outliers} />
+              {activeTab === "board" ? <VisionBoard analysis={analysis} /> : null}
+
+              {activeTab === "clusters" ? <BigRockList bigRocks={analysis.bigRocks} /> : null}
+
+              {activeTab === "alignment" ? <OutlierList outliers={analysis.outliers} /> : null}
+
+              {activeTab === "source" && snapshot ? <IssueTable issues={snapshot.issues} /> : null}
+
+              {activeTab === "setup" ? <SetupPanel onSaved={handleConfigSaved} /> : null}
+            </div>
           </section>
         </>
       ) : (
@@ -204,7 +252,34 @@ export function App() {
         </section>
       )}
 
-      {snapshot ? <IssueTable issues={snapshot.issues} /> : null}
+      {!analysis && snapshot ? (
+        <section className="tab-workspace">
+          <div className="tab-list" role="tablist" aria-label="Jira source views">
+            <button type="button" role="tab" aria-selected={activeTab !== "setup"} aria-controls="panel-source" onClick={() => setActiveTab("source")}>
+              Jira Source
+            </button>
+            <button type="button" role="tab" aria-selected={activeTab === "setup"} aria-controls="panel-setup" onClick={() => setActiveTab("setup")}>
+              Setup
+            </button>
+          </div>
+          <div className="tab-panel" id={activeTab === "setup" ? "panel-setup" : "panel-source"} role="tabpanel">
+            {activeTab === "setup" ? <SetupPanel onSaved={handleConfigSaved} /> : <IssueTable issues={snapshot.issues} />}
+          </div>
+        </section>
+      ) : null}
+
+      {!analysis && !snapshot ? (
+        <section className="tab-workspace">
+          <div className="tab-list" role="tablist" aria-label="Setup views">
+            <button type="button" role="tab" aria-selected="true" aria-controls="panel-setup">
+              Setup
+            </button>
+          </div>
+          <div className="tab-panel" id="panel-setup" role="tabpanel">
+            <SetupPanel onSaved={handleConfigSaved} />
+          </div>
+        </section>
+      ) : null}
     </main>
   );
 }
@@ -212,4 +287,3 @@ export function App() {
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Unexpected error";
 }
-
