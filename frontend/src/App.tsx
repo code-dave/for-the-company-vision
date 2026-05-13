@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BrainCircuit, CheckCircle2, GitBranch, Loader2, RefreshCcw, Search } from "lucide-react";
+import type { ReactNode } from "react";
+import { AlertTriangle, ArrowRight, BrainCircuit, CheckCircle2, Database, GitBranch, Loader2, RefreshCcw, Search, Terminal } from "lucide-react";
 import { api } from "./api";
 import { MetricsPanel } from "./components/MetricsPanel";
 import { VisionBoard } from "./components/VisionBoard";
@@ -9,7 +10,7 @@ import { IssueTable } from "./components/IssueTable";
 import { SetupPanel } from "./components/SetupPanel";
 import { SignalList } from "./components/SignalList";
 import { formatDate } from "./lib/format";
-import type { AppConfig, BoardAnalysis, HealthResponse, Snapshot } from "./types";
+import type { AppConfig, BoardAnalysis, HealthResponse, Snapshot, SyncJob } from "./types";
 
 type LoadState = "idle" | "syncing" | "analyzing" | "loading";
 type TabId = "overview" | "board" | "clusters" | "alignment" | "source" | "setup";
@@ -19,6 +20,7 @@ export function App() {
   const [project, setProject] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [analysis, setAnalysis] = useState<BoardAnalysis | null>(null);
+  const [syncJob, setSyncJob] = useState<SyncJob | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -58,11 +60,30 @@ export function App() {
   }
 
   async function syncJira() {
+    const targetProject = project.trim().toUpperCase();
+    if (!targetProject) {
+      setError("Choose a Jira project before syncing.");
+      return;
+    }
     setLoadState("syncing");
     setError(null);
+    setSyncJob(null);
     try {
-      const nextSnapshot = await api.sync(project);
+      let job = await api.startSync(targetProject);
+      setSyncJob(job);
+      while (job.state === "queued" || job.state === "running") {
+        await delay(700);
+        job = await api.syncJob(job.id);
+        setSyncJob(job);
+      }
+      if (job.state === "failed") {
+        throw new Error(job.error || job.message || "Jira sync failed");
+      }
+      const nextSnapshot = await api.snapshot(job.project);
+      setProject(job.project);
       setSnapshot(nextSnapshot);
+      setAnalysis(null);
+      setActiveTab("source");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -76,6 +97,7 @@ export function App() {
     try {
       const result = await api.analyze(project, forceSync);
       setAnalysis(result);
+      setActiveTab("overview");
       await loadCached(project);
     } catch (err) {
       setError(errorMessage(err));
@@ -139,11 +161,11 @@ export function App() {
           </button>
           <button type="button" className="icon-button secondary" onClick={() => void syncJira()} disabled={busy} title="Sync Jira project">
             {loadState === "syncing" ? <Loader2 className="spin" size={17} aria-hidden="true" /> : <RefreshCcw size={17} aria-hidden="true" />}
-            <span>Sync</span>
+            <span>1 Sync Jira</span>
           </button>
           <button type="button" className="icon-button primary" onClick={() => void analyze(false)} disabled={busy || !snapshot} title="Analyze cached Jira data with Codex">
             {loadState === "analyzing" ? <Loader2 className="spin" size={17} aria-hidden="true" /> : <BrainCircuit size={17} aria-hidden="true" />}
-            <span>Analyze</span>
+            <span>2 Analyze</span>
           </button>
         </div>
       </header>
@@ -154,6 +176,10 @@ export function App() {
           <span>{error}</span>
         </section>
       ) : null}
+
+      <WorkflowGuide needsSetup={needsSetup} snapshot={snapshot} analysis={analysis} loadState={loadState} />
+
+      {syncJob ? <SyncProgressPanel job={syncJob} /> : null}
 
       <section className="runtime-strip">
         <div>
@@ -238,16 +264,20 @@ export function App() {
       ) : needsSetup ? null : (
         <section className="empty-state">
           <BrainCircuit size={42} aria-hidden="true" />
-          <h2>No vision board yet</h2>
-          <p>Sync Jira{project ? ` for ${project}` : ""}, then run Codex analysis to generate the big rocks, small rocks, and outlier view.</p>
+          <h2>{snapshot ? "Jira sync complete" : "No vision board yet"}</h2>
+          <p>
+            {snapshot
+              ? "Step 2 is ready. Run Codex analysis on the synced Jira cache to generate the big rocks, small rocks, and outlier view."
+              : `Step 1 is to sync Jira${project ? ` for ${project}` : ""}. Step 2 is Codex analysis after the Jira pull finishes.`}
+          </p>
           <div className="empty-actions">
             <button type="button" className="icon-button secondary" onClick={() => void syncJira()} disabled={busy}>
               <RefreshCcw size={17} aria-hidden="true" />
-              <span>Sync Jira</span>
+              <span>1 Sync Jira</span>
             </button>
             <button type="button" className="icon-button primary" onClick={() => void analyze(false)} disabled={busy || !snapshot}>
               <BrainCircuit size={17} aria-hidden="true" />
-              <span>Analyze</span>
+              <span>2 Analyze</span>
             </button>
           </div>
         </section>
@@ -283,6 +313,128 @@ export function App() {
       ) : null}
     </main>
   );
+}
+
+function WorkflowGuide({ needsSetup, snapshot, analysis, loadState }: { needsSetup: boolean; snapshot: Snapshot | null; analysis: BoardAnalysis | null; loadState: LoadState }) {
+  const syncState = loadState === "syncing" ? "active" : snapshot ? "done" : needsSetup ? "blocked" : "ready";
+  const analyzeState = loadState === "analyzing" ? "active" : analysis ? "done" : snapshot ? "ready" : "blocked";
+  const headline = needsSetup
+    ? "Finish setup before syncing"
+    : !snapshot
+      ? "Start with 1 Sync Jira"
+      : !analysis
+        ? "Next step: 2 Analyze"
+        : "Vision board is ready";
+
+  return (
+    <section className="workflow-guide" aria-label="Workflow">
+      <div className="workflow-head">
+        <p className="eyebrow">Run order</p>
+        <strong>{headline}</strong>
+      </div>
+      <WorkflowStep icon={<Database size={18} />} number="1" title="Sync Jira" detail="Pull project tickets into the local cache" state={syncState} />
+      <ArrowRight className="workflow-arrow" size={18} aria-hidden="true" />
+      <WorkflowStep icon={<BrainCircuit size={18} />} number="2" title="Analyze" detail="Ask Codex to build the vision board" state={analyzeState} />
+    </section>
+  );
+}
+
+function WorkflowStep({
+  icon,
+  number,
+  title,
+  detail,
+  state
+}: {
+  icon: ReactNode;
+  number: string;
+  title: string;
+  detail: string;
+  state: "active" | "blocked" | "done" | "ready";
+}) {
+  return (
+    <div className={`workflow-step ${state}`}>
+      <span className="workflow-step-icon">{state === "active" ? <Loader2 className="spin" size={18} aria-hidden="true" /> : state === "done" ? <CheckCircle2 size={18} aria-hidden="true" /> : icon}</span>
+      <div>
+        <span>{number}</span>
+        <strong>{title}</strong>
+        <p>{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function SyncProgressPanel({ job }: { job: SyncJob }) {
+  const percent = Math.max(0, Math.min(100, job.percent || 0));
+  const pulledLabel = job.total > 0 ? `${job.pulled.toLocaleString()} / ${job.total.toLocaleString()}` : job.pulled.toLocaleString();
+  const stateLabel = job.state === "succeeded" ? "Complete" : job.state === "failed" ? "Failed" : "Running";
+
+  return (
+    <section className={`sync-progress-panel ${job.state}`}>
+      <div className="sync-progress-header">
+        <div>
+          <p className="eyebrow">Jira Sync</p>
+          <h2>{job.message || stateLabel}</h2>
+        </div>
+        <strong>{percent}%</strong>
+      </div>
+      <div className="progress-track" aria-label={`Jira sync ${percent}% complete`}>
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      <div className="sync-progress-stats">
+        <div>
+          <span>State</span>
+          <strong>{stateLabel}</strong>
+        </div>
+        <div>
+          <span>Project</span>
+          <strong>{job.project}</strong>
+        </div>
+        <div>
+          <span>Issues pulled</span>
+          <strong>{pulledLabel}</strong>
+        </div>
+        <div>
+          <span>Stage</span>
+          <strong>{job.stage || "starting"}</strong>
+        </div>
+      </div>
+      <div className="terminal-card">
+        <div className="terminal-title">
+          <Terminal size={16} aria-hidden="true" />
+          <span>Live pull details</span>
+        </div>
+        <div className="terminal-log" role="log" aria-live="polite">
+          {job.logs.map((entry, index) => (
+            <div key={`${entry.time}-${index}`}>
+              <span>{terminalTime(entry.time)}</span>
+              <span>[{entry.stage}]</span>
+              <span>{entry.message}</span>
+            </div>
+          ))}
+          {job.state === "failed" && job.error ? (
+            <div>
+              <span>{terminalTime(job.updatedAt)}</span>
+              <span>[error]</span>
+              <span>{job.error}</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function terminalTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "--:--:--";
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function errorMessage(err: unknown): string {

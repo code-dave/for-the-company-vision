@@ -47,6 +47,30 @@ export type ProjectSearchResponse = {
   projects: ProjectSearchResult[];
 };
 
+export type SyncJobLog = {
+  time: string;
+  stage: string;
+  message: string;
+  percent: number;
+};
+
+export type SyncJob = {
+  id: string;
+  project: string;
+  state: "queued" | "running" | "succeeded" | "failed";
+  stage: string;
+  message: string;
+  percent: number;
+  pulled: number;
+  total: number;
+  issueCount: number;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  error?: string;
+  logs: SyncJobLog[];
+};
+
 export type Issue = {
   id: string;
   key: string;

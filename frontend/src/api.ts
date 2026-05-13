@@ -1,4 +1,4 @@
-import type { AppConfig, BoardAnalysis, HealthResponse, ProjectSearchRequest, ProjectSearchResponse, Snapshot, UpdateAppConfig } from "./types";
+import type { AppConfig, BoardAnalysis, HealthResponse, ProjectSearchRequest, ProjectSearchResponse, Snapshot, SyncJob, UpdateAppConfig } from "./types";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -45,6 +45,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ project })
     }),
+  startSync: (project: string) =>
+    request<SyncJob>("/api/sync/start", {
+      method: "POST",
+      body: JSON.stringify({ project })
+    }),
+  syncJob: (id: string) => request<SyncJob>(`/api/sync/jobs/${encodeURIComponent(id)}`),
   snapshot: (project: string) =>
     request<Snapshot>(`/api/snapshot?project=${encodeURIComponent(project)}`),
   analyze: (project: string, forceSync = false) =>

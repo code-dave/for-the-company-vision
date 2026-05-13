@@ -52,3 +52,14 @@ type Project struct {
 	LeadName       string `json:"leadName,omitempty"`
 	AvatarURL      string `json:"avatarUrl,omitempty"`
 }
+
+type FetchProgress struct {
+	Stage   string `json:"stage"`
+	Message string `json:"message"`
+	Percent int    `json:"percent"`
+	Pulled  int    `json:"pulled"`
+	Total   int    `json:"total"`
+	Page    int    `json:"page,omitempty"`
+}
+
+type ProgressFunc func(FetchProgress)

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/code-dave/for-the-company-vision/internal/analysis"
@@ -22,6 +24,10 @@ type Server struct {
 	jira     *jira.Client
 	analyzer analysis.Analyzer
 	cache    *store.Cache
+
+	jobsMu    sync.RWMutex
+	nextJobID uint64
+	syncJobs  map[string]*syncJob
 }
 
 type HealthResponse struct {
@@ -48,6 +54,30 @@ type projectSearchResponse struct {
 	Projects []jira.Project `json:"projects"`
 }
 
+type syncJob struct {
+	ID         string       `json:"id"`
+	Project    string       `json:"project"`
+	State      string       `json:"state"`
+	Stage      string       `json:"stage"`
+	Message    string       `json:"message"`
+	Percent    int          `json:"percent"`
+	Pulled     int          `json:"pulled"`
+	Total      int          `json:"total"`
+	IssueCount int          `json:"issueCount"`
+	StartedAt  time.Time    `json:"startedAt"`
+	UpdatedAt  time.Time    `json:"updatedAt"`
+	FinishedAt *time.Time   `json:"finishedAt,omitempty"`
+	Error      string       `json:"error,omitempty"`
+	Logs       []syncJobLog `json:"logs"`
+}
+
+type syncJobLog struct {
+	Time    time.Time `json:"time"`
+	Stage   string    `json:"stage"`
+	Message string    `json:"message"`
+	Percent int       `json:"percent"`
+}
+
 type updateSettingsRequest struct {
 	JiraBaseURL string `json:"jiraBaseUrl"`
 	JiraProject string `json:"jiraProject"`
@@ -59,7 +89,7 @@ type updateSettingsRequest struct {
 }
 
 func NewServer(cfg config.Config, jiraClient *jira.Client, analyzer analysis.Analyzer, cache *store.Cache) *Server {
-	return &Server{cfg: cfg, jira: jiraClient, analyzer: analyzer, cache: cache}
+	return &Server{cfg: cfg, jira: jiraClient, analyzer: analyzer, cache: cache, syncJobs: map[string]*syncJob{}}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -68,6 +98,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("POST /api/config", s.handleUpdateConfig)
 	mux.HandleFunc("POST /api/projects/search", s.handleProjectSearch)
+	mux.HandleFunc("POST /api/sync/start", s.handleStartSync)
+	mux.HandleFunc("GET /api/sync/jobs/{id}", s.handleGetSyncJob)
 	mux.HandleFunc("POST /api/sync", s.handleSync)
 	mux.HandleFunc("GET /api/snapshot", s.handleGetSnapshot)
 	mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
@@ -200,6 +232,37 @@ func (s *Server) handleProjectSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, projectSearchResponse{Projects: projects})
 }
 
+func (s *Server) handleStartSync(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeProjectRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	project := s.project(req.Project)
+	if project == "" {
+		writeError(w, http.StatusBadRequest, errors.New("project is required"))
+		return
+	}
+	if s.jira == nil {
+		writeError(w, http.StatusBadRequest, errors.New("Jira is not configured; save endpoint and token in setup"))
+		return
+	}
+
+	job := s.createSyncJob(project)
+	go s.runSyncJob(job.ID, project)
+	writeJSON(w, http.StatusAccepted, job)
+}
+
+func (s *Server) handleGetSyncJob(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	job, ok := s.syncJobSnapshot(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Errorf("sync job %s was not found", id))
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeProjectRequest(r)
 	if err != nil {
@@ -316,6 +379,154 @@ func (s *Server) project(project string) string {
 		return s.cfg.JiraProject
 	}
 	return project
+}
+
+func (s *Server) createSyncJob(project string) syncJob {
+	now := time.Now().UTC()
+	id := fmt.Sprintf("sync-%d-%d", now.UnixNano(), atomic.AddUint64(&s.nextJobID, 1))
+	job := &syncJob{
+		ID:        id,
+		Project:   project,
+		State:     "queued",
+		Stage:     "queued",
+		Message:   "Queued Jira sync",
+		Percent:   0,
+		StartedAt: now,
+		UpdatedAt: now,
+		Logs: []syncJobLog{
+			{
+				Time:    now,
+				Stage:   "queued",
+				Message: fmt.Sprintf("Queued Jira sync for %s", project),
+				Percent: 0,
+			},
+		},
+	}
+
+	s.jobsMu.Lock()
+	s.syncJobs[id] = job
+	s.jobsMu.Unlock()
+
+	return cloneSyncJob(job)
+}
+
+func (s *Server) runSyncJob(id, project string) {
+	s.updateSyncJob(id, func(job *syncJob) {
+		job.State = "running"
+		job.Stage = "connect"
+		job.Message = "Connecting to Jira"
+		job.Percent = 1
+		appendSyncLog(job, "connect", job.Message, job.Percent)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.JiraTimeout)
+	defer cancel()
+
+	snapshot, err := s.jira.FetchProjectWithProgress(ctx, project, func(event jira.FetchProgress) {
+		s.updateSyncJob(id, func(job *syncJob) {
+			job.State = "running"
+			job.Stage = event.Stage
+			job.Message = event.Message
+			job.Percent = event.Percent
+			job.Pulled = event.Pulled
+			job.Total = event.Total
+			appendSyncLog(job, event.Stage, event.Message, event.Percent)
+		})
+	})
+	if err != nil {
+		s.failSyncJob(id, err)
+		return
+	}
+
+	s.updateSyncJob(id, func(job *syncJob) {
+		job.Stage = "cache"
+		job.Message = "Saving Jira snapshot to local cache"
+		job.Percent = 99
+		job.Pulled = snapshot.IssueCount
+		job.Total = max(job.Total, snapshot.IssueCount)
+		job.IssueCount = snapshot.IssueCount
+		appendSyncLog(job, "cache", job.Message, job.Percent)
+	})
+	if err := s.cache.SaveSnapshot(snapshot); err != nil {
+		s.failSyncJob(id, err)
+		return
+	}
+
+	finishedAt := time.Now().UTC()
+	s.updateSyncJob(id, func(job *syncJob) {
+		job.State = "succeeded"
+		job.Stage = "complete"
+		job.Message = fmt.Sprintf("Sync complete. %d issues saved locally.", snapshot.IssueCount)
+		job.Percent = 100
+		job.Pulled = snapshot.IssueCount
+		job.Total = max(job.Total, snapshot.IssueCount)
+		job.IssueCount = snapshot.IssueCount
+		job.FinishedAt = &finishedAt
+		appendSyncLog(job, "complete", job.Message, job.Percent)
+	})
+}
+
+func (s *Server) failSyncJob(id string, err error) {
+	finishedAt := time.Now().UTC()
+	s.updateSyncJob(id, func(job *syncJob) {
+		job.State = "failed"
+		job.Stage = "error"
+		job.Message = "Jira sync failed"
+		job.Error = err.Error()
+		job.FinishedAt = &finishedAt
+		appendSyncLog(job, "error", err.Error(), job.Percent)
+	})
+}
+
+func (s *Server) updateSyncJob(id string, update func(*syncJob)) {
+	s.jobsMu.Lock()
+	defer s.jobsMu.Unlock()
+
+	job, ok := s.syncJobs[id]
+	if !ok {
+		return
+	}
+	update(job)
+	job.UpdatedAt = time.Now().UTC()
+	if len(job.Logs) > 200 {
+		job.Logs = job.Logs[len(job.Logs)-200:]
+	}
+}
+
+func (s *Server) syncJobSnapshot(id string) (syncJob, bool) {
+	s.jobsMu.RLock()
+	defer s.jobsMu.RUnlock()
+
+	job, ok := s.syncJobs[id]
+	if !ok {
+		return syncJob{}, false
+	}
+	return cloneSyncJob(job), true
+}
+
+func cloneSyncJob(job *syncJob) syncJob {
+	clone := *job
+	clone.Logs = append([]syncJobLog(nil), job.Logs...)
+	return clone
+}
+
+func appendSyncLog(job *syncJob, stage, message string, percent int) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return
+	}
+	if len(job.Logs) > 0 {
+		last := job.Logs[len(job.Logs)-1]
+		if last.Stage == stage && last.Message == message && last.Percent == percent {
+			return
+		}
+	}
+	job.Logs = append(job.Logs, syncJobLog{
+		Time:    time.Now().UTC(),
+		Stage:   stage,
+		Message: message,
+		Percent: percent,
+	})
 }
 
 func decodeProjectRequest(r *http.Request) (projectRequest, error) {

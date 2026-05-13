@@ -107,15 +107,34 @@ func (c *Client) ListProjects(ctx context.Context, query string, limit int) ([]P
 }
 
 func (c *Client) FetchProject(ctx context.Context, project string) (*Snapshot, error) {
+	return c.FetchProjectWithProgress(ctx, project, nil)
+}
+
+func (c *Client) FetchProjectWithProgress(ctx context.Context, project string, progress ProgressFunc) (*Snapshot, error) {
 	project = strings.ToUpper(strings.TrimSpace(project))
 	if project == "" {
 		return nil, errors.New("jira project is required")
 	}
 
+	emitProgress(progress, FetchProgress{
+		Stage:   "prepare",
+		Message: fmt.Sprintf("Preparing Jira sync for project %s", project),
+		Percent: 1,
+	})
+	emitProgress(progress, FetchProgress{
+		Stage:   "fields",
+		Message: "Fetching Jira field metadata",
+		Percent: 4,
+	})
 	fields, err := c.fetchFields(ctx)
 	if err != nil {
 		return nil, err
 	}
+	emitProgress(progress, FetchProgress{
+		Stage:   "fields",
+		Message: fmt.Sprintf("Loaded %d Jira field definitions", len(fields)),
+		Percent: 10,
+	})
 	fieldNames := map[string]string{}
 	for _, field := range fields {
 		fieldNames[field.ID] = field.Name
@@ -126,6 +145,15 @@ func (c *Client) FetchProject(ctx context.Context, project string) (*Snapshot, e
 	var all []Issue
 	total := 1
 	for startAt := 0; startAt < total; startAt += pageSize {
+		page := startAt/pageSize + 1
+		emitProgress(progress, FetchProgress{
+			Stage:   "search",
+			Message: fmt.Sprintf("Requesting Jira issue page %d, starting at issue %d", page, startAt+1),
+			Percent: syncPercent(len(all), total),
+			Pulled:  len(all),
+			Total:   total,
+			Page:    page,
+		})
 		response, err := c.search(ctx, project, startAt, pageSize)
 		if err != nil {
 			return nil, err
@@ -140,16 +168,31 @@ func (c *Client) FetchProject(ctx context.Context, project string) (*Snapshot, e
 		for _, issue := range response.Issues {
 			all = append(all, normalizeIssue(c.baseURL, issue, fieldNames, detected))
 		}
+		emitProgress(progress, FetchProgress{
+			Stage:   "pull",
+			Message: fmt.Sprintf("Fetched %d issues from page %d; %d of %d issues pulled", len(response.Issues), page, len(all), total),
+			Percent: syncPercent(len(all), total),
+			Pulled:  len(all),
+			Total:   total,
+			Page:    page,
+		})
 		if len(response.Issues) == 0 {
 			break
 		}
 	}
 
+	emitProgress(progress, FetchProgress{
+		Stage:   "normalize",
+		Message: fmt.Sprintf("Sorting and preparing %d normalized issues for local cache", len(all)),
+		Percent: 94,
+		Pulled:  len(all),
+		Total:   total,
+	})
 	sort.Slice(all, func(i, j int) bool {
 		return all[i].Updated.After(all[j].Updated)
 	})
 
-	return &Snapshot{
+	snapshot := &Snapshot{
 		Project:       project,
 		BaseURL:       c.baseURL,
 		PulledAt:      time.Now().UTC(),
@@ -157,7 +200,15 @@ func (c *Client) FetchProject(ctx context.Context, project string) (*Snapshot, e
 		Issues:        all,
 		FieldNames:    fieldNames,
 		DetectedField: detected,
-	}, nil
+	}
+	emitProgress(progress, FetchProgress{
+		Stage:   "complete",
+		Message: fmt.Sprintf("Jira pull complete with %d issues", snapshot.IssueCount),
+		Percent: 98,
+		Pulled:  snapshot.IssueCount,
+		Total:   total,
+	})
+	return snapshot, nil
 }
 
 func (c *Client) fetchFields(ctx context.Context) ([]fieldMeta, error) {
@@ -266,6 +317,27 @@ func isHTTPStatus(err error, statuses ...int) bool {
 		}
 	}
 	return false
+}
+
+func emitProgress(progress ProgressFunc, event FetchProgress) {
+	if progress == nil {
+		return
+	}
+	progress(event)
+}
+
+func syncPercent(pulled, total int) int {
+	if total <= 0 {
+		return 90
+	}
+	percent := 15 + int((float64(pulled)/float64(total))*75)
+	if percent < 15 {
+		return 15
+	}
+	if percent > 90 {
+		return 90
+	}
+	return percent
 }
 
 func filterProjects(rawProjects []rawProject, query string, limit int) []Project {
