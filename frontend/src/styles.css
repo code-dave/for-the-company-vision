@@ -911,6 +911,42 @@ h3 {
   line-height: 1.35;
 }
 
+.admin-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-action {
+  display: grid;
+  gap: 4px;
+  min-height: 70px;
+  border: 1px solid #dfe5eb;
+  border-radius: 6px;
+  padding: 11px 12px;
+  color: var(--ink);
+  background: #ffffff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-action:hover {
+  border-color: var(--blue);
+  background: #eef5ff;
+}
+
+.admin-action strong,
+.admin-action span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-action span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .setup-card {
   border: 1px solid #dfe5eb;
   border-radius: 8px;
@@ -1122,6 +1158,14 @@ h3 {
   gap: 10px;
 }
 
+.review-actions,
+.setup-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1235,6 +1279,10 @@ td:nth-child(2) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .admin-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .sync-progress-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1270,6 +1318,10 @@ td:nth-child(2) {
   }
 
   .readiness-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-actions {
     grid-template-columns: 1fr;
   }
 

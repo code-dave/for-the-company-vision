@@ -48,6 +48,7 @@ export function SetupPanel({ onSaved }: Props) {
   const tokenUrl = useMemo(() => buildTokenUrl(normalizedJiraUrl), [normalizedJiraUrl]);
   const currentStepIndex = steps.findIndex((item) => item.id === step);
   const projectSearchReady = Boolean(normalizedJiraUrl && (form.jiraToken.trim() || config?.jiraTokenSaved));
+  const configured = Boolean(config?.jiraBaseUrl && config.jiraTokenSaved && config.jiraProject);
   const selectedProject = useMemo(
     () => projectResults.find((project) => project.key === form.jiraProject.trim().toUpperCase()),
     [form.jiraProject, projectResults]
@@ -99,6 +100,24 @@ export function SetupPanel({ onSaved }: Props) {
   }
 
   async function saveConfig() {
+    setMessage(null);
+    const projectKey = form.jiraProject.trim().toUpperCase() || manualProjectKey(projectQuery);
+    if (!normalizedJiraUrl) {
+      setError("Enter a Jira URL before saving.");
+      setStep("endpoint");
+      return;
+    }
+    if (!form.jiraToken.trim() && !config?.jiraTokenSaved) {
+      setError("Paste a Jira API token before saving.");
+      setStep("token");
+      return;
+    }
+    if (!projectKey) {
+      setError("Select a Jira project or enter its key before saving.");
+      setStep("project");
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -106,7 +125,7 @@ export function SetupPanel({ onSaved }: Props) {
       const saved = await api.saveConfig({
         ...form,
         jiraBaseUrl: normalizedJiraUrl,
-        jiraProject: form.jiraProject.trim().toUpperCase(),
+        jiraProject: projectKey,
         codexBin: form.codexBin.trim() || "codex",
         cacheDir: form.cacheDir.trim() || ".vision-cache"
       });
@@ -165,6 +184,12 @@ export function SetupPanel({ onSaved }: Props) {
     setStep(previous.id);
   }
 
+  function goToStep(nextStep: SetupStep) {
+    setError(null);
+    setMessage(null);
+    setStep(nextStep);
+  }
+
   async function searchProjects(query: string) {
     if (!projectSearchReady) {
       setProjectSearchError("Enter the Jira URL and token before searching projects.");
@@ -214,8 +239,8 @@ export function SetupPanel({ onSaved }: Props) {
     <section className="panel setup-panel">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">Onboarding</p>
-          <h2>Setup</h2>
+          <p className="eyebrow">{configured ? "Admin" : "Onboarding"}</p>
+          <h2>{configured ? "Setup and settings" : "Setup"}</h2>
         </div>
         <button type="button" className="icon-button secondary" onClick={() => void loadConfig()} disabled={saving}>
           <RefreshCcw size={17} aria-hidden="true" />
@@ -229,7 +254,7 @@ export function SetupPanel({ onSaved }: Props) {
             key={item.id}
             type="button"
             className={step === item.id ? "active" : index < currentStepIndex ? "complete" : ""}
-            onClick={() => setStep(item.id)}
+            onClick={() => goToStep(item.id)}
           >
             <span>{index + 1}</span>
             {item.label}
@@ -244,6 +269,15 @@ export function SetupPanel({ onSaved }: Props) {
         <ReadinessItem ready={Boolean(form.jiraProject.trim() || health?.defaultProject)} title="Project" detail={form.jiraProject.trim().toUpperCase() || health?.defaultProject || "No project configured"} />
       </div>
 
+      {configured ? (
+        <div className="admin-actions" aria-label="Setup shortcuts">
+          <AdminAction title="Jira URL" detail={normalizedJiraUrl || "No endpoint saved"} onClick={() => goToStep("endpoint")} />
+          <AdminAction title="API token" detail={config?.jiraTokenSaved ? "Saved locally; paste a new one to replace it" : "No token saved"} onClick={() => goToStep("token")} />
+          <AdminAction title="Project" detail={form.jiraProject.trim().toUpperCase() || "No project selected"} onClick={() => goToStep("project")} />
+          <AdminAction title="Codex and app" detail={`${form.codexBin || "codex"} on port ${form.port || 8787}`} onClick={() => goToStep("codex")} />
+        </div>
+      ) : null}
+
       {error ? <div className="form-message error">{error}</div> : null}
       {message ? (
         <div className="form-message success">
@@ -257,8 +291,8 @@ export function SetupPanel({ onSaved }: Props) {
           <div className="setup-step-panel">
             <div>
               <p className="eyebrow">Step 1</p>
-              <h3>Connect Jira</h3>
-              <p className="setup-copy">Paste any Jira URL. The app will keep only the site origin and add HTTPS when needed.</p>
+              <h3>{configured ? "Change Jira URL" : "Connect Jira"}</h3>
+              <p className="setup-copy">Paste any Jira URL. The app will keep only the site origin and add HTTPS when needed. If this points to a different Jira site, replace the token on the next step.</p>
             </div>
             <label>
               Jira URL
@@ -280,8 +314,8 @@ export function SetupPanel({ onSaved }: Props) {
           <div className="setup-step-panel">
             <div>
               <p className="eyebrow">Step 2</p>
-              <h3>Create a Jira token</h3>
-              <p className="setup-copy">Open the generated Jira profile link, create a token, then paste it here. The token is saved locally and never returned back to the UI after saving.</p>
+              <h3>{config?.jiraTokenSaved ? "Update Jira token" : "Create a Jira token"}</h3>
+              <p className="setup-copy">Open the generated Jira profile link, create a token, then paste it here. Leave the field blank to keep the saved token. Tokens are saved locally and never returned back to the UI after saving.</p>
             </div>
             <a className={`token-link ${tokenUrl ? "" : "disabled"}`} href={tokenUrl || undefined} target="_blank" rel="noreferrer">
               <ExternalLink size={17} aria-hidden="true" />
@@ -303,7 +337,7 @@ export function SetupPanel({ onSaved }: Props) {
           <div className="setup-step-panel">
             <div>
               <p className="eyebrow">Step 3</p>
-              <h3>Choose the Jira project</h3>
+              <h3>{configured ? "Change the Jira project" : "Choose the Jira project"}</h3>
               <p className="setup-copy">Search projects available to this Jira token, then select the project to sync and analyze.</p>
             </div>
             <div className="project-search-row">
@@ -356,7 +390,7 @@ export function SetupPanel({ onSaved }: Props) {
           <div className="setup-step-panel">
             <div>
               <p className="eyebrow">Step 4</p>
-              <h3>Check Codex</h3>
+              <h3>{configured ? "Change Codex and app settings" : "Check Codex"}</h3>
               <p className="setup-copy">The app uses your local Codex installation for ticket analysis. Keep the binary as `codex` unless it lives elsewhere.</p>
             </div>
             <div className="form-grid">
@@ -384,8 +418,8 @@ export function SetupPanel({ onSaved }: Props) {
           <div className="setup-step-panel">
             <div>
               <p className="eyebrow">Step 5</p>
-              <h3>Review and save</h3>
-              <p className="setup-copy">Save these settings, then use Sync and Analyze from the top bar.</p>
+              <h3>{configured ? "Review saved settings" : "Review and save"}</h3>
+              <p className="setup-copy">Save these settings, then use 1 Sync Jira and 2 Analyze from the top bar.</p>
             </div>
             <div className="review-grid">
               <ReviewItem label="Jira URL" value={normalizedJiraUrl || "Missing"} />
@@ -394,6 +428,22 @@ export function SetupPanel({ onSaved }: Props) {
               <ReviewItem label="Codex" value={form.codexBin || "codex"} />
               <ReviewItem label="Config file" value={config?.configPath ?? ".vision-cache/config.env"} />
             </div>
+            {configured ? (
+              <div className="review-actions">
+                <button type="button" className="icon-button secondary" onClick={() => goToStep("endpoint")}>
+                  <span>Edit Jira URL</span>
+                </button>
+                <button type="button" className="icon-button secondary" onClick={() => goToStep("token")}>
+                  <span>Replace Token</span>
+                </button>
+                <button type="button" className="icon-button secondary" onClick={() => goToStep("project")}>
+                  <span>Change Project</span>
+                </button>
+                <button type="button" className="icon-button secondary" onClick={() => goToStep("codex")}>
+                  <span>Codex Settings</span>
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -405,15 +455,32 @@ export function SetupPanel({ onSaved }: Props) {
         {step === "review" ? (
           <button type="button" className="icon-button primary" onClick={() => void saveConfig()} disabled={saving}>
             <Save size={17} aria-hidden="true" />
-            <span>{saving ? "Saving" : "Save and Finish"}</span>
+            <span>{saving ? "Saving" : configured ? "Save Settings" : "Save and Finish"}</span>
           </button>
         ) : (
-          <button type="button" className="icon-button primary" onClick={goNext} disabled={saving}>
-            <span>Next</span>
-          </button>
+          <div className="setup-footer-actions">
+            {configured ? (
+              <button type="button" className="icon-button secondary" onClick={() => void saveConfig()} disabled={saving}>
+                <Save size={17} aria-hidden="true" />
+                <span>{saving ? "Saving" : "Save Settings"}</span>
+              </button>
+            ) : null}
+            <button type="button" className="icon-button primary" onClick={goNext} disabled={saving}>
+              <span>Next</span>
+            </button>
+          </div>
         )}
       </div>
     </section>
+  );
+}
+
+function AdminAction({ title, detail, onClick }: { title: string; detail: string; onClick: () => void }) {
+  return (
+    <button type="button" className="admin-action" onClick={onClick}>
+      <strong>{title}</strong>
+      <span>{detail}</span>
+    </button>
   );
 }
 

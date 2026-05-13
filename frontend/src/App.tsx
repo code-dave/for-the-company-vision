@@ -129,7 +129,7 @@ export function App() {
         { id: "clusters", label: "Strategic Clusters", enabled: Boolean(analysis) },
         { id: "alignment", label: "Alignment Review", enabled: Boolean(analysis) },
         { id: "source", label: "Jira Source", enabled: Boolean(snapshot) },
-        { id: "setup", label: "Setup", enabled: true }
+        { id: "setup", label: "Setup / Admin", enabled: true }
       ] satisfies Array<{ id: TabId; label: string; enabled: boolean }>,
     [analysis, snapshot]
   );
@@ -290,7 +290,7 @@ export function App() {
               Jira Source
             </button>
             <button type="button" role="tab" aria-selected={activeTab === "setup"} aria-controls="panel-setup" onClick={() => setActiveTab("setup")}>
-              Setup
+              Setup / Admin
             </button>
           </div>
           <div className="tab-panel" id={activeTab === "setup" ? "panel-setup" : "panel-source"} role="tabpanel">
@@ -303,7 +303,7 @@ export function App() {
         <section className="tab-workspace">
           <div className="tab-list" role="tablist" aria-label="Setup views">
             <button type="button" role="tab" aria-selected="true" aria-controls="panel-setup">
-              Setup
+              Setup / Admin
             </button>
           </div>
           <div className="tab-panel" id="panel-setup" role="tabpanel">
