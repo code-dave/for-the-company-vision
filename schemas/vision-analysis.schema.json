@@ -24,7 +24,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "title", "rationale", "status", "themes", "issueKeys", "smallRocks", "confidence", "alignment"],
+        "required": ["id", "title", "rationale", "status", "owner", "themes", "issueKeys", "smallRocks", "confidence", "alignment", "recommended"],
         "properties": {
           "id": { "type": "string" },
           "title": { "type": "string" },
@@ -38,7 +38,7 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["id", "title", "issueKeys", "status", "whyItFits", "confidence"],
+              "required": ["id", "title", "issueKeys", "status", "owner", "whyItFits", "confidence"],
               "properties": {
                 "id": { "type": "string" },
                 "title": { "type": "string" },
@@ -61,7 +61,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["issueKey", "title", "reason", "severity", "confidence"],
+        "required": ["issueKey", "title", "reason", "recommendedFit", "severity", "confidence"],
         "properties": {
           "issueKey": { "type": "string" },
           "title": { "type": "string" },
@@ -82,8 +82,30 @@
         "bigRockCount": { "type": "integer", "minimum": 0 },
         "smallRockCount": { "type": "integer", "minimum": 0 },
         "outlierCount": { "type": "integer", "minimum": 0 },
-        "statusCounts": { "type": "object", "additionalProperties": { "type": "integer" } },
-        "issueTypeCounts": { "type": "object", "additionalProperties": { "type": "integer" } },
+        "statusCounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "value"],
+            "properties": {
+              "name": { "type": "string" },
+              "value": { "type": "integer" }
+            }
+          }
+        },
+        "issueTypeCounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "value"],
+            "properties": {
+              "name": { "type": "string" },
+              "value": { "type": "integer" }
+            }
+          }
+        },
         "unassignedCount": { "type": "integer", "minimum": 0 },
         "withoutEpicCount": { "type": "integer", "minimum": 0 },
         "lastJiraPullIso8601": { "type": "string" }
@@ -113,7 +135,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "label", "kind"],
+            "required": ["id", "label", "kind", "status", "issueKeys", "score"],
             "properties": {
               "id": { "type": "string" },
               "label": { "type": "string" },
@@ -129,7 +151,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "source", "target"],
+            "required": ["id", "source", "target", "label"],
             "properties": {
               "id": { "type": "string" },
               "source": { "type": "string" },
@@ -143,7 +165,7 @@
     "model": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider"],
+      "required": ["provider", "model"],
       "properties": {
         "provider": { "type": "string" },
         "model": { "type": "string" }

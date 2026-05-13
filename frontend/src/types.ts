@@ -57,8 +57,8 @@ export type BoardAnalysis = {
     bigRockCount: number;
     smallRockCount: number;
     outlierCount: number;
-    statusCounts: Record<string, number>;
-    issueTypeCounts: Record<string, number>;
+    statusCounts: CountBucket[];
+    issueTypeCounts: CountBucket[];
     unassignedCount: number;
     withoutEpicCount: number;
     lastJiraPullIso8601: string;
@@ -72,6 +72,11 @@ export type BoardAnalysis = {
     provider: string;
     model?: string;
   };
+};
+
+export type CountBucket = {
+  name: string;
+  value: number;
 };
 
 export type BigRock = {
@@ -129,4 +134,3 @@ export type BoardEdge = {
   target: string;
   label?: string;
 };
-

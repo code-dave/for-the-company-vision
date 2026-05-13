@@ -57,16 +57,21 @@ type Outlier struct {
 }
 
 type Metrics struct {
-	TotalIssues         int            `json:"totalIssues"`
-	AnalyzedIssues      int            `json:"analyzedIssues"`
-	BigRockCount        int            `json:"bigRockCount"`
-	SmallRockCount      int            `json:"smallRockCount"`
-	OutlierCount        int            `json:"outlierCount"`
-	StatusCounts        map[string]int `json:"statusCounts"`
-	IssueTypeCounts     map[string]int `json:"issueTypeCounts"`
-	UnassignedCount     int            `json:"unassignedCount"`
-	WithoutEpicCount    int            `json:"withoutEpicCount"`
-	LastJiraPullISO8601 string         `json:"lastJiraPullIso8601"`
+	TotalIssues         int           `json:"totalIssues"`
+	AnalyzedIssues      int           `json:"analyzedIssues"`
+	BigRockCount        int           `json:"bigRockCount"`
+	SmallRockCount      int           `json:"smallRockCount"`
+	OutlierCount        int           `json:"outlierCount"`
+	StatusCounts        []CountBucket `json:"statusCounts"`
+	IssueTypeCounts     []CountBucket `json:"issueTypeCounts"`
+	UnassignedCount     int           `json:"unassignedCount"`
+	WithoutEpicCount    int           `json:"withoutEpicCount"`
+	LastJiraPullISO8601 string        `json:"lastJiraPullIso8601"`
+}
+
+type CountBucket struct {
+	Name  string `json:"name"`
+	Value int    `json:"value"`
 }
 
 type Signal struct {

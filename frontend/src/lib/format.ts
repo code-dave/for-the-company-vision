@@ -12,7 +12,10 @@ export function formatDate(value?: string): string {
   }).format(date);
 }
 
-export function toChartData(counts: Record<string, number> = {}) {
+export function toChartData(counts: Record<string, number> | Array<{ name: string; value: number }> = {}) {
+  if (Array.isArray(counts)) {
+    return [...counts].sort((a, b) => b.value - a.value).slice(0, 8);
+  }
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
@@ -22,4 +25,3 @@ export function toChartData(counts: Record<string, number> = {}) {
 export function confidenceLabel(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
-
