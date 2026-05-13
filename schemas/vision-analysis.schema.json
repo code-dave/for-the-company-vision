@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "generatedAt", "visionSummary", "health", "bigRocks", "outliers", "metrics", "signals", "board", "model"],
+  "properties": {
+    "project": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "visionSummary": { "type": "string" },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "alignment", "risks", "nextMoves", "confidence"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "alignment": { "type": "string" },
+        "risks": { "type": "array", "items": { "type": "string" } },
+        "nextMoves": { "type": "array", "items": { "type": "string" } },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "bigRocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "rationale", "status", "themes", "issueKeys", "smallRocks", "confidence", "alignment"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "rationale": { "type": "string" },
+          "status": { "type": "string" },
+          "owner": { "type": "string" },
+          "themes": { "type": "array", "items": { "type": "string" } },
+          "issueKeys": { "type": "array", "items": { "type": "string" } },
+          "smallRocks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "title", "issueKeys", "status", "whyItFits", "confidence"],
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "issueKeys": { "type": "array", "items": { "type": "string" } },
+                "status": { "type": "string" },
+                "owner": { "type": "string" },
+                "whyItFits": { "type": "string" },
+                "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+              }
+            }
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "alignment": { "type": "string" },
+          "recommended": { "type": "string" }
+        }
+      }
+    },
+    "outliers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["issueKey", "title", "reason", "severity", "confidence"],
+        "properties": {
+          "issueKey": { "type": "string" },
+          "title": { "type": "string" },
+          "reason": { "type": "string" },
+          "recommendedFit": { "type": "string" },
+          "severity": { "type": "string", "enum": ["low", "medium", "high"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalIssues", "analyzedIssues", "bigRockCount", "smallRockCount", "outlierCount", "statusCounts", "issueTypeCounts", "unassignedCount", "withoutEpicCount", "lastJiraPullIso8601"],
+      "properties": {
+        "totalIssues": { "type": "integer", "minimum": 0 },
+        "analyzedIssues": { "type": "integer", "minimum": 0 },
+        "bigRockCount": { "type": "integer", "minimum": 0 },
+        "smallRockCount": { "type": "integer", "minimum": 0 },
+        "outlierCount": { "type": "integer", "minimum": 0 },
+        "statusCounts": { "type": "object", "additionalProperties": { "type": "integer" } },
+        "issueTypeCounts": { "type": "object", "additionalProperties": { "type": "integer" } },
+        "unassignedCount": { "type": "integer", "minimum": 0 },
+        "withoutEpicCount": { "type": "integer", "minimum": 0 },
+        "lastJiraPullIso8601": { "type": "string" }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "title", "detail", "evidence"],
+        "properties": {
+          "kind": { "type": "string" },
+          "title": { "type": "string" },
+          "detail": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "board": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "kind"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "kind": { "type": "string", "enum": ["big-rock", "small-rock", "outlier", "theme", "risk"] },
+              "status": { "type": "string" },
+              "issueKeys": { "type": "array", "items": { "type": "string" } },
+              "score": { "type": "number" }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "source", "target"],
+            "properties": {
+              "id": { "type": "string" },
+              "source": { "type": "string" },
+              "target": { "type": "string" },
+              "label": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider"],
+      "properties": {
+        "provider": { "type": "string" },
+        "model": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+.DS_Store
+
+# Local secrets and machine config.
+.env
+.env.local
+.env.*.local
+
+# Runtime cache.
+.vision-cache/
+
+# Go build output.
+bin/
+dist/
+coverage.out
+
+# Frontend build output.
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
+
+# Logs.
+*.log
