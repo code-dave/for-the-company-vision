@@ -1,4 +1,17 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CircleDot, Layers3, ListChecks, Target } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  BriefcaseBusiness,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  CircleDot,
+  Gauge,
+  Layers3,
+  Lightbulb,
+  ListChecks,
+  Target
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { confidenceLabel } from "../lib/format";
@@ -8,6 +21,21 @@ type Props = {
   analysis: BoardAnalysis;
 };
 
+type RockEntry = {
+  rock: BigRock;
+  index: number;
+};
+
+type PortfolioAllocation = RockEntry & {
+  issueCount: number;
+  smallRockCount: number;
+  allocation: number;
+  outlierCount: number;
+  highOutlierCount: number;
+  mediumOutlierCount: number;
+  posture: string;
+};
+
 export function VisionBoard({ analysis }: Props) {
   const smallRockCount = analysis.bigRocks.reduce((total, rock) => total + rock.smallRocks.length, 0);
   const linkedIssueCount = new Set(analysis.bigRocks.flatMap((rock) => [...rock.issueKeys, ...rock.smallRocks.flatMap((small) => small.issueKeys)])).size;
@@ -15,9 +43,9 @@ export function VisionBoard({ analysis }: Props) {
   const rockSignature = rockIds.join("|");
   const [expandedRockIds, setExpandedRockIds] = useState<Set<string>>(() => new Set(rockIds));
   const [selectedRockId, setSelectedRockId] = useState("all");
-  const [networkExpanded, setNetworkExpanded] = useState(true);
-  const [showSmallRocks, setShowSmallRocks] = useState(true);
-  const [showOutliers, setShowOutliers] = useState(true);
+  const [storyExpanded, setStoryExpanded] = useState(true);
+  const [showEvidence, setShowEvidence] = useState(true);
+  const [showRisks, setShowRisks] = useState(true);
   const focusedRock = selectedRockId === "all" ? null : analysis.bigRocks.find((rock) => rock.id === selectedRockId) ?? null;
   const focusedOutliers = useMemo(() => outliersForFocus(analysis.outliers, focusedRock), [analysis.outliers, focusedRock]);
   const topOutliers = [...focusedOutliers].sort((a, b) => severityRank(b.severity) - severityRank(a.severity)).slice(0, 8);
@@ -69,7 +97,7 @@ export function VisionBoard({ analysis }: Props) {
           <label className="board-filter">
             Focus
             <select value={selectedRockId} onChange={(event) => setSelectedRockId(event.target.value)}>
-              <option value="all">All big rocks</option>
+              <option value="all">Portfolio view</option>
               {analysis.bigRocks.map((rock, index) => (
                 <option key={rock.id} value={rock.id}>
                   BR-{String(index + 1).padStart(2, "0")} {rock.title}
@@ -91,16 +119,17 @@ export function VisionBoard({ analysis }: Props) {
         <SummaryTile icon={<AlertTriangle size={18} />} label="Outliers" value={analysis.outliers.length} tone="risk" />
       </div>
 
-      <PortfolioNetwork
-        bigRocks={analysis.bigRocks}
-        outliers={topOutliers}
-        selectedRockId={selectedRockId}
-        expanded={networkExpanded}
-        showSmallRocks={showSmallRocks}
-        showOutliers={showOutliers}
-        onExpandedChange={setNetworkExpanded}
-        onShowSmallRocksChange={setShowSmallRocks}
-        onShowOutliersChange={setShowOutliers}
+      <StrategyStoryMap
+        analysis={analysis}
+        visibleRockEntries={visibleRockEntries}
+        focusedRock={focusedRock}
+        outliers={focusedOutliers}
+        expanded={storyExpanded}
+        showEvidence={showEvidence}
+        showRisks={showRisks}
+        onExpandedChange={setStoryExpanded}
+        onShowEvidenceChange={setShowEvidence}
+        onShowRisksChange={setShowRisks}
       />
 
       <div className="vision-map-layout">
@@ -131,194 +160,379 @@ export function VisionBoard({ analysis }: Props) {
   );
 }
 
-function PortfolioNetwork({
-  bigRocks,
+function StrategyStoryMap({
+  analysis,
+  visibleRockEntries,
+  focusedRock,
   outliers,
-  selectedRockId,
   expanded,
-  showSmallRocks,
-  showOutliers,
+  showEvidence,
+  showRisks,
   onExpandedChange,
-  onShowSmallRocksChange,
-  onShowOutliersChange
+  onShowEvidenceChange,
+  onShowRisksChange
 }: {
-  bigRocks: BigRock[];
+  analysis: BoardAnalysis;
+  visibleRockEntries: RockEntry[];
+  focusedRock: BigRock | null;
   outliers: Outlier[];
-  selectedRockId: string;
   expanded: boolean;
-  showSmallRocks: boolean;
-  showOutliers: boolean;
+  showEvidence: boolean;
+  showRisks: boolean;
   onExpandedChange: (expanded: boolean) => void;
-  onShowSmallRocksChange: (show: boolean) => void;
-  onShowOutliersChange: (show: boolean) => void;
+  onShowEvidenceChange: (show: boolean) => void;
+  onShowRisksChange: (show: boolean) => void;
 }) {
-  const center = { x: 560, y: 230 };
-  const riskHub = { x: 1015, y: 230 };
-  const maxIssues = Math.max(1, ...bigRocks.map((rock) => rock.issueKeys.length));
-  const nodes = bigRocks.map((rock, index) => {
-    const angle = -Math.PI / 2 + (index * Math.PI * 2) / Math.max(1, bigRocks.length);
-    const radius = 42 + Math.round((rock.issueKeys.length / maxIssues) * 18);
-    const selected = selectedRockId === "all" || selectedRockId === rock.id;
-    return {
-      rock,
-      index,
-      radius,
-      selected,
-      x: center.x + Math.cos(angle) * 345,
-      y: center.y + Math.sin(angle) * 168
-    };
-  });
+  const allocations = buildPortfolioAllocations(visibleRockEntries, outliers);
+  const focusLabel = focusedRock ? focusedRock.title : "Portfolio view";
+  const toggleLabel = expanded ? (focusedRock ? "Hide Story" : "Hide View") : focusedRock ? "Show Story" : "Show View";
 
   return (
-    <div className="portfolio-network-panel">
-      <div className="portfolio-network-header">
+    <div className="strategy-story-panel">
+      <div className="strategy-story-header">
         <div>
-          <p className="eyebrow">Executive network</p>
-          <h3>How the strategy clusters hang together</h3>
+          <p className="eyebrow">{focusedRock ? "Focused strategy map" : "Executive portfolio view"}</p>
+          <h3>{focusLabel}</h3>
         </div>
-        <div className="network-controls">
+        <div className="story-controls">
           <label>
-            <input type="checkbox" checked={showSmallRocks} onChange={(event) => onShowSmallRocksChange(event.target.checked)} />
-            Small rocks
+            <input type="checkbox" checked={showEvidence} onChange={(event) => onShowEvidenceChange(event.target.checked)} />
+            Evidence
           </label>
           <label>
-            <input type="checkbox" checked={showOutliers} onChange={(event) => onShowOutliersChange(event.target.checked)} />
-            Outliers
+            <input type="checkbox" checked={showRisks} onChange={(event) => onShowRisksChange(event.target.checked)} />
+            Risks
           </label>
           <button type="button" className="icon-button secondary" onClick={() => onExpandedChange(!expanded)}>
             {expanded ? <ChevronRight size={17} aria-hidden="true" /> : <ChevronDown size={17} aria-hidden="true" />}
-            <span>{expanded ? "Hide Map" : "Show Map"}</span>
+            <span>{toggleLabel}</span>
           </button>
         </div>
       </div>
       {expanded ? (
-      <div className="portfolio-network-canvas">
-        <svg viewBox="0 0 1180 460" role="img" aria-label="Network map of portfolio vision, big rocks, small rocks, and alignment outliers">
-          <defs>
-            <radialGradient id="portfolioCenter" cx="50%" cy="45%" r="70%">
-              <stop offset="0%" stopColor="#4b7ba5" />
-              <stop offset="100%" stopColor="#294b68" />
-            </radialGradient>
-            <filter id="nodeShadow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="4" stdDeviation="5" floodColor="#20262d" floodOpacity="0.16" />
-            </filter>
-          </defs>
-          <text className="network-area-label" x="80" y="36">
-            Strategic clusters
-          </text>
-          {showOutliers ? (
-            <text className="network-area-label risk" x="970" y="36">
-              Alignment risk
-            </text>
-          ) : null}
-
-          {nodes.map((node) => (
-            <g key={`${node.rock.id}-edge`} className={node.selected ? undefined : "network-dimmed"}>
-              <line className="network-link" x1={center.x} y1={center.y} x2={node.x} y2={node.y} />
-              {showSmallRocks
-                ? node.rock.smallRocks.slice(0, 10).map((small, smallIndex) => {
-                    const point = smallRockPoint(node.x, node.y, node.radius, smallIndex, Math.min(10, node.rock.smallRocks.length));
-                    return <line key={`${small.id}-link`} className="network-small-link" x1={node.x} y1={node.y} x2={point.x} y2={point.y} />;
-                  })
-                : null}
-            </g>
-          ))}
-
-          {showOutliers ? <line className="network-risk-link" x1={center.x + 70} y1={center.y} x2={riskHub.x - 55} y2={riskHub.y} /> : null}
-
-          <g className="network-center-node" filter="url(#nodeShadow)">
-            <circle cx={center.x} cy={center.y} r="64" />
-            <text x={center.x} y={center.y - 8}>
-              <tspan x={center.x}>Portfolio</tspan>
-              <tspan x={center.x} dy="17">
-                Vision
-              </tspan>
-            </text>
-            <text className="network-node-subtitle" x={center.x} y={center.y + 35}>
-              {bigRocks.length} big rocks
-            </text>
-          </g>
-
-          {nodes.map((node) => (
-            <g key={node.rock.id} className={node.selected ? undefined : "network-dimmed"}>
-              {showSmallRocks
-                ? node.rock.smallRocks.slice(0, 10).map((small, smallIndex) => {
-                    const point = smallRockPoint(node.x, node.y, node.radius, smallIndex, Math.min(10, node.rock.smallRocks.length));
-                    return (
-                      <g key={small.id} className="network-small-node">
-                        <title>{small.title}</title>
-                        <circle cx={point.x} cy={point.y} r="7" />
-                      </g>
-                    );
-                  })
-                : null}
-              <g className="network-big-node" filter="url(#nodeShadow)">
-                <title>{node.rock.title}</title>
-                <circle cx={node.x} cy={node.y} r={node.radius} />
-                <text className="network-node-index" x={node.x} y={node.y - 19}>
-                  BR-{String(node.index + 1).padStart(2, "0")}
-                </text>
-                <text className="network-big-title" x={node.x} y={node.y + 2}>
-                  {titleLines(node.rock.title).map((line, lineIndex) => (
-                    <tspan key={`${line}-${lineIndex}`} x={node.x} dy={lineIndex === 0 ? 0 : 14}>
-                      {line}
-                    </tspan>
-                  ))}
-                </text>
-                <text className="network-node-subtitle" x={node.x} y={node.y + node.radius - 13}>
-                  {node.rock.issueKeys.length} issues
-                </text>
-              </g>
-            </g>
-          ))}
-
-          {showOutliers ? (
-          <g className="network-risk-node" filter="url(#nodeShadow)">
-            <circle cx={riskHub.x} cy={riskHub.y} r="46" />
-            <text x={riskHub.x} y={riskHub.y - 5}>
-              Risk
-            </text>
-            <text className="network-node-subtitle" x={riskHub.x} y={riskHub.y + 17}>
-              {outliers.length} outliers
-            </text>
-          </g>
-          ) : null}
-
-          {showOutliers
-            ? outliers.slice(0, 6).map((outlier, index) => {
-                const y = 96 + index * 44;
-                return (
-                  <g key={outlier.issueKey} className={`network-outlier-node ${outlier.severity}`}>
-                    <title>{outlier.title}</title>
-                    <line className="network-risk-link muted" x1={riskHub.x + 42} y1={riskHub.y} x2="1115" y2={y} />
-                    <circle cx="1115" cy={y} r="10" />
-                    <text x="1097" y={y + 4}>
-                      {outlier.issueKey}
-                    </text>
-                  </g>
-                );
-              })
-            : null}
-        </svg>
-      </div>
+        focusedRock ? (
+          <FocusedStrategyMap analysis={analysis} visibleRockEntries={visibleRockEntries} outliers={outliers} showEvidence={showEvidence} showRisks={showRisks} />
+        ) : (
+          <PortfolioView analysis={analysis} allocations={allocations} outliers={outliers} showEvidence={showEvidence} showRisks={showRisks} />
+        )
       ) : (
-        <div className="portfolio-network-collapsed">
-          <strong>Network map hidden</strong>
-          <span>Use Show Map to reopen the executive relationship view. The focus filter still applies to the big-rock lanes below.</span>
+        <div className="strategy-story-collapsed">
+          <strong>{focusedRock ? "Focused story collapsed" : "Portfolio view collapsed"}</strong>
+          <span>Focus and lane filters remain active below.</span>
         </div>
       )}
-      <div className="portfolio-network-legend" aria-label="Network legend">
-        <span>
-          <i className="legend-big" /> Big rocks sized by Jira issue count
-        </span>
-        <span>
-          <i className="legend-small" /> Small rocks clustered around each big rock
-        </span>
-        <span>
-          <i className="legend-risk" /> Outliers separated as alignment risk
-        </span>
+    </div>
+  );
+}
+
+function PortfolioView({
+  analysis,
+  allocations,
+  outliers,
+  showEvidence,
+  showRisks
+}: {
+  analysis: BoardAnalysis;
+  allocations: PortfolioAllocation[];
+  outliers: Outlier[];
+  showEvidence: boolean;
+  showRisks: boolean;
+}) {
+  const totalIssues = allocations.reduce((total, entry) => total + entry.issueCount, 0);
+  const totalSmallRocks = allocations.reduce((total, entry) => total + entry.smallRockCount, 0);
+  const topAllocation = allocations[0];
+  const topRisk = allocations.find((entry) => entry.outlierCount > 0);
+  const highRiskCount = outliers.filter((outlier) => outlier.severity === "high").length;
+  const portfolioShape = concentrationSummary(topAllocation?.allocation ?? 0);
+  const evidenceText =
+    analysis.metrics.analyzedIssues > 0
+      ? `${analysis.metrics.analyzedIssues.toLocaleString()} analyzed of ${analysis.metrics.totalIssues.toLocaleString()} Jira issues`
+      : `${totalIssues.toLocaleString()} Jira issues mapped to strategy`;
+
+  if (allocations.length === 0) {
+    return (
+      <div className="portfolio-empty-state">
+        <BriefcaseBusiness size={22} aria-hidden="true" />
+        <strong>No portfolio allocation yet</strong>
+        <span>Run analysis after syncing Jira to generate big rocks, investment allocation, and attention items.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="portfolio-view">
+      <div className="portfolio-command-grid">
+        <PortfolioSignal
+          icon={<Target size={18} />}
+          label="Strategic thesis"
+          title={analysis.health.alignment}
+          detail={analysis.visionSummary}
+          stats={[`${analysis.health.score} alignment score`, `${confidenceLabel(analysis.health.confidence)} confidence`]}
+        />
+        <PortfolioSignal
+          icon={<Gauge size={18} />}
+          label="Operating shape"
+          title={portfolioShape}
+          detail={topAllocation ? `${topAllocation.rock.title} carries ${topAllocation.allocation}% of mapped work.` : "No mapped work is concentrated yet."}
+          stats={[`${allocations.length} big rocks`, `${totalSmallRocks} small rocks`, evidenceText]}
+        />
+        <PortfolioSignal
+          icon={<AlertTriangle size={18} />}
+          label="Leadership attention"
+          title={`${outliers.length} attention items`}
+          detail={
+            topRisk
+              ? `${topRisk.rock.title} has the highest visible outlier pressure.`
+              : analysis.health.risks[0] ?? "No portfolio risks were returned by the analysis."
+          }
+          stats={[`${highRiskCount} high severity`, `${analysis.metrics.withoutEpicCount.toLocaleString()} without epic`, `${analysis.health.nextMoves.length} next moves`]}
+          tone={outliers.length > 0 ? "risk" : "good"}
+        />
+      </div>
+
+      <div className="portfolio-story-layout">
+        <section className="portfolio-allocation-panel">
+          <div className="portfolio-section-head">
+            <div>
+              <p className="eyebrow">Portfolio allocation</p>
+              <h4>Ranked investment pillars</h4>
+            </div>
+            <span>{totalIssues.toLocaleString()} mapped issues</span>
+          </div>
+          <div className="portfolio-allocation-list">
+            {allocations.map((entry) => (
+              <PortfolioAllocationRow key={entry.rock.id} entry={entry} showEvidence={showEvidence} />
+            ))}
+          </div>
+        </section>
+
+        <section className="portfolio-attention-panel">
+          <div className="portfolio-section-head">
+            <div>
+              <p className="eyebrow">Executive queue</p>
+              <h4>Decisions and pressure points</h4>
+            </div>
+          </div>
+
+          <div className="decision-list">
+            {analysis.health.nextMoves.slice(0, 4).map((move) => (
+              <div key={move} className="decision-item">
+                <Lightbulb size={15} aria-hidden="true" />
+                <span>{move}</span>
+              </div>
+            ))}
+          </div>
+
+          {showRisks ? (
+            <div className="portfolio-risk-stack">
+              {analysis.health.risks.slice(0, 3).map((risk) => (
+                <div key={risk} className="story-risk-item">
+                  <AlertTriangle size={15} aria-hidden="true" />
+                  <span>{risk}</span>
+                </div>
+              ))}
+              {[...outliers]
+                .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
+                .slice(0, 5)
+                .map((outlier) => (
+                  <div key={outlier.issueKey} className={`story-outlier-chip ${outlier.severity}`}>
+                    <strong>{outlier.issueKey}</strong>
+                    <span>{outlier.title}</span>
+                  </div>
+                ))}
+            </div>
+          ) : null}
+        </section>
       </div>
     </div>
+  );
+}
+
+function PortfolioSignal({
+  icon,
+  label,
+  title,
+  detail,
+  stats,
+  tone = "default"
+}: {
+  icon: ReactNode;
+  label: string;
+  title: string;
+  detail: string;
+  stats: string[];
+  tone?: "default" | "risk" | "good";
+}) {
+  return (
+    <article className={`portfolio-signal ${tone}`}>
+      <span className="portfolio-signal-icon">{icon}</span>
+      <div>
+        <p className="eyebrow">{label}</p>
+        <h4>{title}</h4>
+        <p>{detail}</p>
+      </div>
+      <div className="portfolio-signal-stats">
+        {stats.map((stat) => (
+          <span key={stat}>{stat}</span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function PortfolioAllocationRow({ entry, showEvidence }: { entry: PortfolioAllocation; showEvidence: boolean }) {
+  return (
+    <article className={`portfolio-allocation-row ${entry.outlierCount > 0 ? "watch" : ""}`}>
+      <span className="portfolio-rank">BR-{String(entry.index + 1).padStart(2, "0")}</span>
+      <div className="portfolio-allocation-main">
+        <div className="portfolio-allocation-title">
+          <strong>{entry.rock.title}</strong>
+          <span>{entry.posture}</span>
+        </div>
+        <p>{entry.rock.rationale}</p>
+        <div className="portfolio-allocation-bar" aria-label={`${entry.allocation}% portfolio allocation`}>
+          <span style={{ width: `${Math.max(entry.allocation, entry.issueCount > 0 ? 4 : 0)}%` }} />
+        </div>
+        {showEvidence ? (
+          <div className="story-evidence">
+            <span>{entry.issueCount} Jira issues</span>
+            <span>{entry.allocation}% allocation</span>
+            <span>{entry.smallRockCount} small rocks</span>
+            <span>{confidenceLabel(entry.rock.confidence)} confidence</span>
+            {entry.outlierCount > 0 ? <span>{entry.outlierCount} attention items</span> : null}
+            {entry.mediumOutlierCount > 0 ? <span>{entry.mediumOutlierCount} medium risks</span> : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="portfolio-allocation-score">
+        <strong>{entry.allocation}%</strong>
+        <span>allocation</span>
+        {entry.outlierCount > 0 ? <em>{entry.highOutlierCount > 0 ? "High risk" : "Watch"}</em> : null}
+      </div>
+    </article>
+  );
+}
+
+function FocusedStrategyMap({
+  analysis,
+  visibleRockEntries,
+  outliers,
+  showEvidence,
+  showRisks
+}: {
+  analysis: BoardAnalysis;
+  visibleRockEntries: RockEntry[];
+  outliers: Outlier[];
+  showEvidence: boolean;
+  showRisks: boolean;
+}) {
+  const primaryRocks = [...visibleRockEntries].sort((a, b) => b.rock.issueKeys.length - a.rock.issueKeys.length);
+  const totalVisibleIssues = visibleRockEntries.reduce((total, entry) => total + entry.rock.issueKeys.length, 0);
+  const totalVisibleSmallRocks = visibleRockEntries.reduce((total, entry) => total + entry.rock.smallRocks.length, 0);
+
+  return (
+    <div className="strategy-story-grid">
+      <section className="story-column story-intent">
+        <div className="story-column-header">
+          <span>1</span>
+          <div>
+            <p className="eyebrow">Strategic intent</p>
+            <h4>{analysis.health.alignment}</h4>
+          </div>
+        </div>
+        <p>{analysis.visionSummary}</p>
+        <div className="story-score-card">
+          <div className="story-score">{analysis.health.score}</div>
+          <div>
+            <strong>Alignment score</strong>
+            <span>{confidenceLabel(analysis.health.confidence)} confidence</span>
+          </div>
+        </div>
+        <div className="story-stat-row">
+          <span>{totalVisibleIssues} issues in focus</span>
+          <span>{totalVisibleSmallRocks} small rocks</span>
+        </div>
+      </section>
+
+      <div className="story-arrow" aria-hidden="true">
+        <ArrowRight size={22} />
+      </div>
+
+      <section className="story-column story-investments">
+        <div className="story-column-header">
+          <span>2</span>
+          <div>
+            <p className="eyebrow">Investment pillar</p>
+            <h4>Work connected to this strategic bet</h4>
+          </div>
+        </div>
+        <div className="story-pillar-list">
+          {primaryRocks.map((entry) => (
+            <StoryPillar key={entry.rock.id} rock={entry.rock} index={entry.index} showEvidence={showEvidence} />
+          ))}
+        </div>
+      </section>
+
+      <div className="story-arrow" aria-hidden="true">
+        <ArrowRight size={22} />
+      </div>
+
+      <section className="story-column story-decisions">
+        <div className="story-column-header">
+          <span>3</span>
+          <div>
+            <p className="eyebrow">Leadership attention</p>
+            <h4>Decisions, risks, and next moves</h4>
+          </div>
+        </div>
+        <div className="decision-list">
+          {analysis.health.nextMoves.slice(0, 3).map((move) => (
+            <div key={move} className="decision-item">
+              <Lightbulb size={15} aria-hidden="true" />
+              <span>{move}</span>
+            </div>
+          ))}
+        </div>
+        {showRisks ? (
+          <div className="story-risk-list">
+            {analysis.health.risks.slice(0, 3).map((risk) => (
+              <div key={risk} className="story-risk-item">
+                <AlertTriangle size={15} aria-hidden="true" />
+                <span>{risk}</span>
+              </div>
+            ))}
+            {outliers.slice(0, 3).map((outlier) => (
+              <div key={outlier.issueKey} className={`story-outlier-chip ${outlier.severity}`}>
+                <strong>{outlier.issueKey}</strong>
+                <span>{outlier.title}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function StoryPillar({ rock, index, showEvidence }: { rock: BigRock; index: number; showEvidence: boolean }) {
+  return (
+    <article className="story-pillar">
+      <div className="story-pillar-head">
+        <span>BR-{String(index + 1).padStart(2, "0")}</span>
+        <strong>{rock.title}</strong>
+      </div>
+      <p>{rock.rationale}</p>
+      <div className="story-pillar-meter" aria-label={`${confidenceLabel(rock.confidence)} confidence`}>
+        <span style={{ width: `${confidencePercent(rock.confidence)}%` }} />
+      </div>
+      {showEvidence ? (
+        <div className="story-evidence">
+          <span>{rock.issueKeys.length} Jira issues</span>
+          <span>{rock.smallRocks.length} small rocks</span>
+          <span>{confidenceLabel(rock.confidence)} confidence</span>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -435,47 +649,70 @@ function outliersForFocus(outliers: Outlier[], rock: BigRock | null) {
   if (!rock) {
     return outliers;
   }
+  return outliers.filter((outlier) => outlierMatchesRock(outlier, rock));
+}
+
+function buildPortfolioAllocations(entries: RockEntry[], outliers: Outlier[]): PortfolioAllocation[] {
+  const totalIssues = entries.reduce((total, entry) => total + entry.rock.issueKeys.length, 0);
+  return entries
+    .map((entry) => {
+      const matchedOutliers = outliers.filter((outlier) => outlierMatchesRock(outlier, entry.rock));
+      const highOutlierCount = matchedOutliers.filter((outlier) => outlier.severity === "high").length;
+      const mediumOutlierCount = matchedOutliers.filter((outlier) => outlier.severity === "medium").length;
+      const allocation = totalIssues > 0 ? Math.round((entry.rock.issueKeys.length / totalIssues) * 100) : 0;
+      return {
+        ...entry,
+        issueCount: entry.rock.issueKeys.length,
+        smallRockCount: entry.rock.smallRocks.length,
+        allocation,
+        outlierCount: matchedOutliers.length,
+        highOutlierCount,
+        mediumOutlierCount,
+        posture: allocationPosture(allocation, matchedOutliers.length, highOutlierCount, entry.rock.confidence)
+      };
+    })
+    .sort((a, b) => b.issueCount - a.issueCount || b.smallRockCount - a.smallRockCount);
+}
+
+function outlierMatchesRock(outlier: Outlier, rock: BigRock) {
   const title = rock.title.toLowerCase();
   const issueKeys = new Set([...rock.issueKeys, ...rock.smallRocks.flatMap((small) => small.issueKeys)]);
-  const matched = outliers.filter((outlier) => {
-    const recommendedFit = outlier.recommendedFit?.toLowerCase() ?? "";
-    return issueKeys.has(outlier.issueKey) || (recommendedFit !== "" && (recommendedFit.includes(title) || title.includes(recommendedFit)));
-  });
-  return matched.length > 0 ? matched : outliers;
+  const recommendedFit = outlier.recommendedFit?.toLowerCase() ?? "";
+  return issueKeys.has(outlier.issueKey) || (recommendedFit !== "" && (recommendedFit.includes(title) || title.includes(recommendedFit)));
+}
+
+function allocationPosture(allocation: number, outlierCount: number, highOutlierCount: number, confidence: number) {
+  if (highOutlierCount > 0) {
+    return "Leadership risk";
+  }
+  if (outlierCount > 0) {
+    return "Needs inspection";
+  }
+  if (allocation >= 35) {
+    return "Major investment";
+  }
+  if (confidence < 0.5) {
+    return "Needs validation";
+  }
+  if (allocation <= 8) {
+    return "Thin coverage";
+  }
+  return "Balanced pillar";
+}
+
+function concentrationSummary(topAllocation: number) {
+  if (topAllocation >= 45) {
+    return "Concentrated portfolio";
+  }
+  if (topAllocation >= 30) {
+    return "Led by one major bet";
+  }
+  if (topAllocation > 0) {
+    return "Distributed investment";
+  }
+  return "No mapped allocation";
 }
 
 function confidencePercent(value: number) {
   return Math.max(0, Math.min(100, Math.round(value * 100)));
-}
-
-function smallRockPoint(x: number, y: number, radius: number, index: number, count: number) {
-  const angle = -Math.PI / 2 + (index * Math.PI * 2) / Math.max(1, count);
-  const distance = radius + 26;
-  return {
-    x: clamp(x + Math.cos(angle) * distance, 32, 950),
-    y: clamp(y + Math.sin(angle) * distance, 34, 426)
-  };
-}
-
-function titleLines(title: string) {
-  const words = title.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length > 15 && current) {
-      lines.push(current);
-      current = word;
-      continue;
-    }
-    current = next;
-  }
-  if (current) {
-    lines.push(current);
-  }
-  return lines.slice(0, 2).map((line) => (line.length > 17 ? `${line.slice(0, 15)}...` : line));
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
 }
